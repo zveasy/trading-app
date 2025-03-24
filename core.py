@@ -1,11 +1,8 @@
+# core.py (Interactive Brokers Trade Execution Only)
 import threading
 import time
-
-# IB API Imports
 from ibapi.client import EClient
 from ibapi.wrapper import EWrapper
-
-# Your project modules
 from contracts import create_contract
 from orders import create_order
 from accounts import get_account, get_all_accounts
@@ -17,11 +14,11 @@ class TradingApp(EWrapper, EClient):
     def __init__(self, host='127.0.0.1', port=7497, clientId=1):
         EWrapper.__init__(self)
         EClient.__init__(self, self)
-        self.host = host
-        self.port = port
-        self.clientId = clientId
         self.nextOrderId = None
         self.connected_event = threading.Event()
+        self.connect(host, port, clientId)
+        threading.Thread(target=self.run, daemon=True).start()
+        self.connected_event.wait(timeout=10)
 
     def nextValidId(self, orderId):
         self.nextOrderId = orderId
@@ -32,52 +29,32 @@ class TradingApp(EWrapper, EClient):
         if errorCode not in [2104, 2106, 2158]:
             logger.error(f"❌ Error ({errorCode}): {errorString}")
 
-    def start(self):
-        """
-        Initiates a connection to IB TWS or Gateway and spawns the event loop in a thread.
-        """
-        self.connect(self.host, self.port, self.clientId)
-        threading.Thread(target=self.run, daemon=True).start()
-        # Wait up to 10 seconds for 'nextValidId' callback
-        self.connected_event.wait(timeout=10)
+    def place_trade(self, symbol, quantity, action, order_type, account):
+        contract = create_contract(symbol)
+        order = create_order(action, order_type, quantity, account=account)
+        self.placeOrder(self.nextOrderId, contract, order)
+        self.nextOrderId += 1
+        time.sleep(1)
 
-def run_trade(symbol, quantity, account_name=None, all_accounts=False):
-    """
-    A convenience function to demonstrate placing a trade
-    using the TradingApp class in this same file.
-    """
-    app = TradingApp(clientId=10)  
-    app.start()
+def run_trade(symbol, quantity, action="BUY", order_type="MKT", account_name=None, all_accounts=False):
+    app = TradingApp(clientId=10)
 
-    contract = create_contract(symbol)
-
-    # Determine which accounts to use
     if all_accounts:
         accounts_to_trade = get_all_accounts()
-        logger.info(f"🚀 Trading {symbol} across ALL accounts: {accounts_to_trade}")
     elif account_name:
         acct_id = get_account(account_name)
-        if not acct_id:
-            logger.error(f"❌ Account name '{account_name}' not found.")
-            return
-        accounts_to_trade = [acct_id]
-        logger.info(f"🚀 Trading {symbol} for account '{account_name}' ({acct_id}).")
+        accounts_to_trade = [acct_id] if acct_id else []
     else:
-        logger.error("❌ Must specify either account_name or all_accounts=True.")
+        logger.error("❌ Specify account_name or all_accounts=True.")
         return
 
-    # Place orders for each account
     for account in accounts_to_trade:
-        order = create_order("BUY", "MKT", quantity, account=account)
-        logger.info(f"🛒 Placing {order.action} {quantity} {symbol} in {account}...")
-        app.placeOrder(app.nextOrderId, contract, order)
-        app.nextOrderId += 1
-        time.sleep(1)  # short delay to avoid rate-limit
+        logger.info(f"🛒 {action} {quantity} {symbol} in {account}...")
+        app.place_trade(symbol, quantity, action, order_type, account)
 
-    time.sleep(3)  # give IB time to process
+    time.sleep(3)
     app.disconnect()
     logger.info("🔌 Disconnected.")
 
 if __name__ == "__main__":
-    # Example usage: trade AAPL across ALL your accounts
     run_trade("AAPL", quantity=1, all_accounts=True)

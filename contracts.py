@@ -1,7 +1,9 @@
 # contracts.py
 from ibapi.contract import Contract
 
-def create_contract(symbol, secType="STK", exchange="SMART", currency="USD", primaryExchange=None):
+def create_contract(symbol, secType="STK", exchange="SMART", currency="USD",
+                    primaryExchange=None, lastTradeDateOrContractMonth=None,
+                    tradingClass=None, multiplier=None):
     contract = Contract()
     contract.symbol = symbol
     contract.secType = secType
@@ -10,25 +12,35 @@ def create_contract(symbol, secType="STK", exchange="SMART", currency="USD", pri
 
     if primaryExchange:
         contract.primaryExchange = primaryExchange
+    if lastTradeDateOrContractMonth:
+        contract.lastTradeDateOrContractMonth = lastTradeDateOrContractMonth
+    if tradingClass:
+        contract.tradingClass = tradingClass
+    if multiplier:
+        contract.multiplier = multiplier
 
     return contract
 
-# 📈 Stocks
-def stock(symbol, exchange="SMART", currency="USD", primaryExchange=None):
-    return create_contract(symbol, secType="STK", exchange=exchange, currency=currency, primaryExchange=primaryExchange)
+def stock(symbol, exchange, currency, primaryExchange=None):
+    contract = Contract()
+    contract.symbol = symbol
+    contract.secType = "STK"
+    contract.exchange = exchange
+    contract.currency = currency
+    if primaryExchange:
+        contract.primaryExchange = primaryExchange
+    return contract
 
-# 📉 Futures (including commodities)
-def future(symbol, exchange="NYMEX", contract_month="202405", currency="USD"):
+def future(symbol, exchange, contract_month):
     contract = Contract()
     contract.symbol = symbol
     contract.secType = "FUT"
     contract.exchange = exchange
-    contract.currency = currency
+    contract.currency = "USD"
     contract.lastTradeDateOrContractMonth = contract_month
     return contract
 
-# 💰 Options
-def option(symbol, exchange="SMART", contract_month="20240419", strike=100, right="C", currency="USD"):
+def option(symbol, exchange, contract_month, strike, right, currency="USD", multiplier="100"):
     contract = Contract()
     contract.symbol = symbol
     contract.secType = "OPT"
@@ -36,9 +48,45 @@ def option(symbol, exchange="SMART", contract_month="20240419", strike=100, righ
     contract.currency = currency
     contract.lastTradeDateOrContractMonth = contract_month
     contract.strike = strike
-    contract.right = right  # 'C' for call, 'P' for put
+    contract.right = right  # 'C' for Call, 'P' for Put
+    contract.multiplier = multiplier
     return contract
 
-# 🌾 Commodities (Wrapper over future)
-def commodity(symbol, contract_month, exchange="NYMEX", currency="USD"):
-    return future(symbol=symbol, exchange=exchange, contract_month=contract_month, currency=currency)
+def etf(symbol, exchange="SMART", currency="USD", primaryExchange="ARCA"):
+    contract = Contract()
+    contract.symbol = symbol
+    contract.secType = "STK"  # ETFs are technically stocks
+    contract.exchange = exchange
+    contract.currency = currency
+    contract.primaryExchange = primaryExchange
+    return contract
+
+def bond(cusip, exchange="SMART"):
+    contract = Contract()
+    contract.secType = "BOND"
+    contract.symbol = ""
+    contract.exchange = exchange
+    contract.currency = "USD"
+    contract.cusip = cusip
+    return contract
+
+def commodity(symbol, exchange, contract_month):
+    contract = Contract()
+    contract.symbol = symbol
+    contract.secType = "FUT"
+    contract.exchange = exchange
+    contract.currency = "USD"
+    contract.lastTradeDateOrContractMonth = contract_month
+    return contract
+
+
+
+#✅ Common Commodity Symbols
+# Symbol	Commodity	Exchange
+# CL	    Crude Oil	NYMEX
+# GC	    Gold	    COMEX
+# SI	    Silver	    COMEX
+# NG	    Natural Gas	NYMEX
+# ZC	    Corn	    CBOT
+# ZW	    Wheat	    CBOT
+# ZS	    Soybeans	CBOT

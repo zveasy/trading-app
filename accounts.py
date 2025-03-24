@@ -1,11 +1,11 @@
 # accounts.py
 ACCOUNTS = {
     "personal": "DFH148809",
-    "low_risk": "DUYYYYYY",
-    "medium_risk": "DUZZZZZZ",
-    "high_risk": "DUAAAAAA",
-    "growth": "DUBBBBBB",
-    "income": "DUCCCCCC",
+    "low_risk": "DUH148810",
+    "medium_risk": "DUH148811",
+    "high_risk": "DUH148812",
+    "growth": "DUH148813",
+    "income": "DUH148814",
 }
 
 def get_account(account_name):

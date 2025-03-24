@@ -14,51 +14,11 @@ from utils import setup_logger
 
 
 
+
 logger = setup_logger()
 
-class TradeApp(EClient, EWrapper):
-    def __init__(self):
-        EClient.__init__(self, self)
-        self.next_order_id = None
-        self.ready = threading.Event()
-
-    def nextValidId(self, orderId):
-        print(f"✅ Connected. Next valid order ID: {orderId}")
-        self.next_order_id = orderId
-        self.ready.set()
-
-    def error(self, reqId, errorCode, errorString):
-        if errorCode not in [2104, 2106, 2158]:
-            print(f"❌ Error {errorCode}: {errorString}")
-
-def create_contract():
-    contract = Contract()
-    contract.symbol = "AAPL"
-    contract.secType = "STK"
-    contract.exchange = "SMART"
-    contract.currency = "USD"
-    return contract
-
-def create_order():
-    order = Order()
-    order.action = "BUY"
-    order.orderType = "MKT"
-    order.totalQuantity = 1
-
-    # Disable problematic attributes explicitly
-    order.eTradeOnly = False
-    order.firmQuoteOnly = False
-    order.transmit = True
-
-    # ✅ Explicitly set your IBKR paper-trading account ID here
-    order.account = "DFH148809"  # Replace with YOUR paper account ID
-
-    return order
-
-
-
 def run_trade(symbol, quantity, account_name=None, all_accounts=False):
-    app = TradingApp(clientId=10)  # use a distinct clientId
+    app = TradingApp(clientId=10)  # from core.py
     app.start()
 
     contract = create_contract(symbol)

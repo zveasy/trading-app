@@ -1,4 +1,4 @@
-# core.py (Interactive Brokers Trade Execution + Order Management)
+# core.py (Interactive Brokers Trade Execution + Order Management + Portfolio + Position Inspection)
 import threading
 import time
 from ibapi.client import EClient
@@ -10,8 +10,6 @@ from contracts import create_contract
 from orders import create_order
 from accounts import get_account, get_all_accounts
 from utils import setup_logger
-from orders import create_order
-
 
 logger = setup_logger()
 
@@ -31,19 +29,22 @@ class TradingApp(IBWrapper, IBClient):
         return order_id
 
     def request_positions(self):
-        self.positions = []
-        self.reqPositions()
+        self.positions = {}
+        self.reqAccountUpdates(True, self.account)
+        time.sleep(2)
+        return self.positions
 
     def request_portfolio(self):
-        self.portfolio = []
-        self.reqAccountUpdates(True, "")
+        self.portfolio = {}
+        self.reqAccountUpdates(True, self.account)
+        time.sleep(2)
+        return self.account_values
 
     def cancel_all_orders(self):
         self.reqGlobalCancel()
 
     def cancel_order_by_id(self, order_id):
         self.cancelOrder(order_id)
-
 
     def update_order(self, contract, order, order_id):
         self.cancel_order_by_id(order_id)
@@ -57,6 +58,18 @@ class TradingApp(IBWrapper, IBClient):
     def error(self, reqId, errorCode, errorString):
         if errorCode not in [2104, 2106, 2158]:
             logger.error(f"❌ Error ({errorCode}): {errorString}")
+
+    def create_order(action, order_type, quantity, limit_price=None, account=None):
+        order = Order()
+        order.action = action
+        order.orderType = order_type
+        order.totalQuantity = quantity
+        if limit_price:
+            order.lmtPrice = limit_price
+        if account:
+            order.account = account
+        order.tif = "DAY"
+        return order
 
 def run_trade(symbol, quantity, action="BUY", order_type="MKT", account_name=None, all_accounts=False):
     app = TradingApp(clientId=10)
@@ -77,6 +90,16 @@ def run_trade(symbol, quantity, action="BUY", order_type="MKT", account_name=Non
         app.send_order(contract, order)
 
     time.sleep(3)
+
+    logger.info("📊 Fetching portfolio data...")
+    portfolio = app.request_portfolio()
+    print("Net Liquidation:", portfolio.get("NetLiquidation"))
+
+    logger.info("📈 Fetching position data...")
+    positions = app.request_positions()
+    for symbol, pos in positions.items():
+        print(f"{symbol} -> Position: {pos['position']}, Market Price: {pos['market_price']}, PnL: {pos['unrealized_pnl']}")
+
     app.disconnect()
     logger.info("🔌 Disconnected.")
 

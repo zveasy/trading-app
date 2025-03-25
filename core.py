@@ -1,24 +1,53 @@
-# core.py (Interactive Brokers Trade Execution Only)
+# core.py (Interactive Brokers Trade Execution + Order Management)
 import threading
 import time
 from ibapi.client import EClient
 from ibapi.wrapper import EWrapper
+from ibapi.order import Order
+from wrapper import IBWrapper
+from client import IBClient
 from contracts import create_contract
 from orders import create_order
 from accounts import get_account, get_all_accounts
 from utils import setup_logger
+from orders import create_order
+
 
 logger = setup_logger()
 
-class TradingApp(EWrapper, EClient):
+class TradingApp(IBWrapper, IBClient):
     def __init__(self, host='127.0.0.1', port=7497, clientId=1):
-        EWrapper.__init__(self)
-        EClient.__init__(self, self)
-        self.nextOrderId = None
+        IBWrapper.__init__(self)
+        IBClient.__init__(self, wrapper=self)
         self.connected_event = threading.Event()
         self.connect(host, port, clientId)
         threading.Thread(target=self.run, daemon=True).start()
         self.connected_event.wait(timeout=10)
+
+    def send_order(self, contract, order):
+        order_id = self.nextOrderId
+        self.placeOrder(orderId=order_id, contract=contract, order=order)
+        self.nextOrderId += 1
+        return order_id
+
+    def request_positions(self):
+        self.positions = []
+        self.reqPositions()
+
+    def request_portfolio(self):
+        self.portfolio = []
+        self.reqAccountUpdates(True, "")
+
+    def cancel_all_orders(self):
+        self.reqGlobalCancel()
+
+    def cancel_order_by_id(self, order_id):
+        self.cancelOrder(order_id)
+
+
+    def update_order(self, contract, order, order_id):
+        self.cancel_order_by_id(order_id)
+        return self.send_order(contract, order)
 
     def nextValidId(self, orderId):
         self.nextOrderId = orderId
@@ -28,13 +57,6 @@ class TradingApp(EWrapper, EClient):
     def error(self, reqId, errorCode, errorString):
         if errorCode not in [2104, 2106, 2158]:
             logger.error(f"❌ Error ({errorCode}): {errorString}")
-
-    def place_trade(self, symbol, quantity, action, order_type, account):
-        contract = create_contract(symbol)
-        order = create_order(action, order_type, quantity, account=account)
-        self.placeOrder(self.nextOrderId, contract, order)
-        self.nextOrderId += 1
-        time.sleep(1)
 
 def run_trade(symbol, quantity, action="BUY", order_type="MKT", account_name=None, all_accounts=False):
     app = TradingApp(clientId=10)
@@ -50,7 +72,9 @@ def run_trade(symbol, quantity, action="BUY", order_type="MKT", account_name=Non
 
     for account in accounts_to_trade:
         logger.info(f"🛒 {action} {quantity} {symbol} in {account}...")
-        app.place_trade(symbol, quantity, action, order_type, account)
+        contract = create_contract(symbol)
+        order = create_order(action, order_type, quantity, account=account)
+        app.send_order(contract, order)
 
     time.sleep(3)
     app.disconnect()

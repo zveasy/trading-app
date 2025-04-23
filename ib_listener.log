@@ -1,0 +1,19 @@
+2025-04-22 12:39:21 [INFO]: ✅ IBTrader ZMQ listener started on port 5555...
+2025-04-22 12:39:21 [INFO]: 📥 Signal received from unknown → BUY AAPL x10.0 @ 1745343479
+2025-04-22 12:39:21 [ERROR]: ❌ Exception during trade loop: create_order() got an unexpected keyword argument 'order_type'. Did you mean 'orderType'?
+2025-04-22 12:39:21 [INFO]: 📥 Signal received from unknown → SELL AAPL x10.0 @ 1745343479
+2025-04-22 12:39:21 [ERROR]: ❌ Exception during trade loop: create_order() got an unexpected keyword argument 'order_type'. Did you mean 'orderType'?
+2025-04-22 12:39:21 [INFO]: 📥 Signal received from unknown → BUY AAPL x10.0 @ 1745343479
+2025-04-22 12:39:21 [ERROR]: ❌ Exception during trade loop: create_order() got an unexpected keyword argument 'order_type'. Did you mean 'orderType'?
+2025-04-22 12:40:31 [INFO]: 🔌 Disconnected from IB.
+2025-04-22 12:40:36 [INFO]: ✅ IBTrader ZMQ listener started on port 5555...
+2025-04-22 12:40:42 [INFO]: 📥 Signal received from unknown → BUY AAPL x10.0 @ 1745343642
+2025-04-22 12:40:42 [INFO]: ✅ Order #1 placed: BUY AAPL x10.0
+2025-04-22 12:40:43 [ERROR]: ❌ Exception during trade loop: 'TradingApp' object has no attribute 'account'
+2025-04-22 12:40:43 [INFO]: 📥 Signal received from unknown → SELL AAPL x10.0 @ 1745343642
+2025-04-22 12:40:43 [INFO]: ✅ Order #2 placed: SELL AAPL x10.0
+2025-04-22 12:40:44 [ERROR]: ❌ Exception during trade loop: 'TradingApp' object has no attribute 'account'
+2025-04-22 12:40:44 [INFO]: 📥 Signal received from unknown → BUY AAPL x10.0 @ 1745343642
+2025-04-22 12:40:44 [INFO]: ✅ Order #3 placed: BUY AAPL x10.0
+2025-04-22 12:40:45 [ERROR]: ❌ Exception during trade loop: 'TradingApp' object has no attribute 'account'
+2025-04-22 13:30:05 [INFO]: 🔌 Disconnected from IB.

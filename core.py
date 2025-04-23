@@ -14,13 +14,15 @@ from utils import setup_logger
 logger = setup_logger()
 
 class TradingApp(IBWrapper, IBClient):
-    def __init__(self, host='127.0.0.1', port=7497, clientId=1):
+    def __init__(self, host='127.0.0.1', port=7497, clientId=1, account=None):
+        self.account = account  # <-- Add this line
         IBWrapper.__init__(self)
         IBClient.__init__(self, wrapper=self)
         self.connected_event = threading.Event()
         self.connect(host, port, clientId)
         threading.Thread(target=self.run, daemon=True).start()
         self.connected_event.wait(timeout=10)
+
 
     def send_order(self, contract, order):
         order_id = self.nextOrderId
@@ -59,15 +61,15 @@ class TradingApp(IBWrapper, IBClient):
         if errorCode not in [2104, 2106, 2158]:
             logger.error(f"❌ Error ({errorCode}): {errorString}")
 
-    def create_order(action, order_type, quantity, limit_price=None, account=None):
+    def create_order(action, orderType, quantity, limit_price=None, account=None):
         order = Order()
         order.action = action
-        order.orderType = order_type
+        order.orderType = orderType
         order.totalQuantity = quantity
         if limit_price:
             order.lmtPrice = limit_price
         if account:
-            order.account = account
+            order.account = account  # ✅ CRUCIAL
         order.tif = "DAY"
         return order
 

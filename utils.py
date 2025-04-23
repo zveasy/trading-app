@@ -20,10 +20,22 @@ class Tick:
         self.bid_size = int(self.bid_size)
         self.ask_size = int(self.ask_size)
 
-def setup_logger():
-    logging.basicConfig(
-        format="%(asctime)s [%(levelname)s]: %(message)s",
-        level=logging.INFO,
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    return logging.getLogger(__name__)
+def setup_logger(name="AppLogger", log_file=None, level=logging.INFO):
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s]: %(message)s", "%Y-%m-%d %H:%M:%S")
+
+    # Console output
+    ch = logging.StreamHandler()
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+
+    # Optional file logging
+    if log_file:
+        fh = logging.FileHandler(log_file)
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
+
+    return logger
+

@@ -26,9 +26,12 @@ class TradingApp(IBWrapper, IBClient):
 
     def send_order(self, contract, order):
         order_id = self.nextOrderId
+        if self.account:
+            order.account = self.account  # ✅ Assign the account here
         self.placeOrder(orderId=order_id, contract=contract, order=order)
         self.nextOrderId += 1
         return order_id
+
 
     def request_positions(self):
         self.positions = {}
@@ -74,8 +77,6 @@ class TradingApp(IBWrapper, IBClient):
         return order
 
 def run_trade(symbol, quantity, action="BUY", order_type="MKT", account_name=None, all_accounts=False):
-    app = TradingApp(clientId=10)
-
     if all_accounts:
         accounts_to_trade = get_all_accounts()
     elif account_name:
@@ -87,9 +88,24 @@ def run_trade(symbol, quantity, action="BUY", order_type="MKT", account_name=Non
 
     for account in accounts_to_trade:
         logger.info(f"🛒 {action} {quantity} {symbol} in {account}...")
+
+        app = TradingApp(clientId=10, account=account)  # ✅ pass account here
         contract = create_contract(symbol)
-        order = create_order(action, order_type, quantity, account=account)
+        order = create_order(action, order_type, quantity, account=account)  # already sets it here
         app.send_order(contract, order)
+
+        logger.info("📊 Fetching portfolio data...")
+        portfolio = app.request_portfolio()
+        print("Net Liquidation:", portfolio.get("NetLiquidation"))
+
+        logger.info("📈 Fetching position data...")
+        positions = app.request_positions()
+        for symbol, pos in positions.items():
+            print(f"{symbol} -> Position: {pos['position']}, Market Price: {pos['market_price']}, PnL: {pos['unrealized_pnl']}")
+
+        app.disconnect()
+        logger.info("🔌 Disconnected.")
+
 
     time.sleep(3)
 

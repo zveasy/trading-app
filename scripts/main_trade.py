@@ -6,11 +6,11 @@ from ibapi.wrapper import EWrapper
 from ibapi.contract import Contract
 from ibapi.order import Order 
 
-from core import TradingApp
-from contracts import create_contract
-from orders import create_order
+from scripts.core import TradingApp
+from scripts.contracts import create_contract
+from scripts.orders import create_order
 from accounts import get_account, get_all_accounts
-from utils import setup_logger
+from utils.utils import setup_logger
 
 
 

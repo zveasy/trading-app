@@ -9,10 +9,10 @@ from ibapi.client import EClient
 from ibapi.wrapper import EWrapper
 
 # Your existing modules
-from contracts import stock, future, option, create_contract
-from wrapper import IBWrapper
-from client import IBClient
-from utils import setup_logger
+from scripts.contracts import stock, future, option, create_contract
+from scripts.wrapper import IBWrapper
+from ib.client import IBClient
+from utils.utils import setup_logger
 
 logger = setup_logger()
 

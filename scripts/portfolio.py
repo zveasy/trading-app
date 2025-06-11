@@ -1,5 +1,5 @@
 # portfolio.py
-from core import TradingApp
+from scripts.core import TradingApp
 import time
 
 def get_portfolio():

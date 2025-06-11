@@ -1,7 +1,7 @@
 import time
-from wrapper import IBWrapper
-from client import IBClient
-from contracts import stock, future, option  # Optional: extend to ETF, bond, commodity
+from scripts.wrapper import IBWrapper
+from ib.client import IBClient
+from scripts.contracts import stock, future, option  # Optional: extend to ETF, bond, commodity
 import pandas as pd
 
 class IBApp(IBWrapper, IBClient):

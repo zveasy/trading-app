@@ -1,6 +1,6 @@
-from core import TradingApp
-from contracts import create_contract
-from orders import create_order
+from scripts.core import TradingApp
+from scripts.contracts import create_contract
+from scripts.orders import create_order
 import time
 import logging
 

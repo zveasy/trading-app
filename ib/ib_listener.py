@@ -1,8 +1,8 @@
 import zmq
 import json
 import time
-from core import TradingApp, create_contract, create_order
-from utils import setup_logger
+from scripts.core import TradingApp, create_contract, create_order
+from utils.utils import setup_logger
 
 logger = setup_logger(name="IBListener", log_file="ib_listener.log")
 

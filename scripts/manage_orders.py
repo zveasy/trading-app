@@ -1,7 +1,7 @@
 # manage_orders.py
-from contracts import create_contract
-from orders import create_order
-from core import TradingApp
+from scripts.contracts import create_contract
+from scripts.orders import create_order
+from scripts.core import TradingApp
 import time
 
 def execute_limit_order(symbol, qty, limit_price, action="BUY", account=None):

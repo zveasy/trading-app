@@ -1,8 +1,8 @@
 # order_portfolio_management.py
 import time
-from contracts import create_contract
-from orders import create_order
-from core import TradingApp
+from scripts.contracts import create_contract
+from scripts.orders import create_order
+from scripts.core import TradingApp
 
 # === Managing Orders Once They're Placed ===
 def test_order_lifecycle():

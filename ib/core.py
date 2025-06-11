@@ -4,12 +4,12 @@ import time
 from ibapi.client import EClient
 from ibapi.wrapper import EWrapper
 from ibapi.order import Order
-from wrapper import IBWrapper
-from client import IBClient
-from contracts import create_contract
-from orders import create_order
-from accounts import get_account, get_all_accounts
-from utils import setup_logger
+from scripts.wrapper import IBWrapper
+from ib.client import IBClient
+from scripts.contracts import create_contract
+from scripts.orders import create_order
+from scripts.accounts import get_account, get_all_accounts
+from utils.utils import setup_logger
 
 logger = setup_logger()
 

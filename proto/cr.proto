@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package loom.quantengine;
+
+// --- optional auxiliary message ---
+message ReplaceParams {
+  double new_price = 1;
+  int32  new_qty   = 2;
+}
+
+// --- main cancel-replace messages ---
+message CancelReplaceRequest {
+  uint64        order_id = 1;
+  ReplaceParams params    = 2;   // embed the struct above
+  uint64        ts_ns     = 3;
+  double new_price = 4;
+}
+
+message CancelReplaceAck {
+  uint64 order_id = 1;
+  uint64 ts_ns    = 2;
+}
+
+message CancelReplaceReject {
+  uint64 order_id = 1;
+  string reason   = 2;
+}

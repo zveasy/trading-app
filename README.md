@@ -46,3 +46,17 @@ Run the setup script to scaffold a new GRIDLOCK folder.
 
 ```bash
 chmod +x gridlock_scaffold.sh
+
+
+# 1. Start your IB Gateway / TWS (port 7497 paper / 7496 live)
+
+# 2. In trading-app (Python) – activate venv and receiver
+cd trading-app
+source .venv/bin/activate
+PYTHONPATH=. python -m tests.cancel_replace_receiver
+# → “Python ZMQ receiver listening on tcp://*:5555 …”
+
+# 3. In QuantEngine (C++)
+cd QuantEngine
+./test_cancel_replace_zmq              # sends proto ID 10001 twice
+# First send ➜ new order, second send ➜ cancel/replace

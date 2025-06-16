@@ -4,12 +4,13 @@ import time
 from ibapi.client import EClient
 from ibapi.wrapper import EWrapper
 from ibapi.order import Order
-from scripts.wrapper import IBWrapper
 from ib.client import IBClient
 from scripts.contracts import create_contract
 from scripts.orders import create_order
-from scripts.accounts import get_account, get_all_accounts
+from scripts.accounts import get_account, get_all_accounts   # <--- if accounts.py is in scripts
 from utils.utils import setup_logger
+from scripts.wrapper import IBWrapper
+
 
 logger = setup_logger()
 
@@ -64,17 +65,17 @@ class TradingApp(IBWrapper, IBClient):
         if errorCode not in [2104, 2106, 2158]:
             logger.error(f"❌ Error ({errorCode}): {errorString}")
 
-    def create_order(action, orderType, quantity, limit_price=None, account=None):
-        order = Order()
-        order.action = action
-        order.orderType = orderType
-        order.totalQuantity = quantity
-        if limit_price:
-            order.lmtPrice = limit_price
+    def create_order(action, order_type, quantity, limit_price=None, account=None):
+        o = Order()
+        o.action        = action    # 'BUY'/'SELL'
+        o.orderType     = order_type  # 'LMT', 'MKT', etc.
+        o.totalQuantity = quantity
+        if limit_price is not None:
+            o.lmtPrice = limit_price
         if account:
-            order.account = account  # ✅ CRUCIAL
-        order.tif = "DAY"
-        return order
+            o.account = account
+        o.tif = "DAY"
+        return o
 
 def run_trade(symbol, quantity, action="BUY", order_type="MKT", account_name=None, all_accounts=False):
     if all_accounts:

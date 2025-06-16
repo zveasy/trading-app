@@ -59,5 +59,14 @@ def stop_limit(action="SELL", quantity=1, stop_price=0.0, limit_price=0.0, accou
     return order
 
 # Default create_order fallback
-def create_order(action="BUY", orderType="MKT", quantity=1, account=None):
-    return market(action, quantity, account)
+def create_order(action, order_type, quantity, limit_price=None, account=None):
+    o = Order()
+    o.action        = action    # 'BUY'/'SELL'
+    o.orderType     = order_type  # 'LMT', 'MKT', etc.
+    o.totalQuantity = quantity
+    if limit_price is not None:
+        o.lmtPrice = limit_price
+    if account:
+        o.account = account
+    o.tif = "DAY"
+    return o

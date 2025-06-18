@@ -1,0 +1,28 @@
+# data/demo_orders.yaml
+# ─────────────────────
+# proto_id, qty, price, symbol (optional)
+
+- proto: 10001
+  qty:   25
+  px:    145.75
+  sym:   AAPL
+
+- proto: 10001     # cancel/replace of same proto_id
+  qty:   25
+  px:    145.55
+  sym:   AAPL
+
+- proto: 10002
+  qty:   10
+  px:    312.10
+  sym:   MSFT
+
+- proto: 10002
+  qty:   10
+  px:    311.80
+  sym:   MSFT
+
+- proto: 20001
+  qty:   2
+  px:    197.40
+  sym:   TSLA

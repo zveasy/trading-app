@@ -1,0 +1,40 @@
+# .github/workflows/demo_sender.yml
+name: Demo Sender Smoke-Test
+
+on:
+  push:
+    paths:
+      - "scripts/demo_sender.py"
+      - "tests/cr_pb2.py"
+      - "data/demo_orders.yaml"
+      - ".github/workflows/demo_sender.yml"
+
+jobs:
+  run-demo-sender:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Install deps
+        run: |
+          python -m pip install -r requirements.txt  # include pyzmq, pyyaml, protobuf
+      - name: Run demo sender (dry run)
+        run: |
+          # Start a dummy ZMQ receiver in background
+          python - <<'PY'
+          import zmq, threading
+          ctx = zmq.Context()
+          sock = ctx.socket(zmq.PULL)
+          sock.bind("tcp://*:5555")
+          def recv():
+              for _ in range(5):  # expect 5 rows max
+                  sock.recv()
+              print("CI receiver received messages.")
+          threading.Thread(target=recv, daemon=True).start()
+          PY
+          # Now run the sender (zero delay)
+          python -m scripts.demo_sender data/demo_orders.yaml --delay 0

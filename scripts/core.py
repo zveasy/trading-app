@@ -1,126 +1,238 @@
-# core.py (Interactive Brokers Trade Execution + Order Management + Portfolio + Position Inspection)
+#!/usr/bin/env python3
+"""
+scripts.core
+────────────
+A thin, unified wrapper around Interactive Brokers' API that:
+
+• Connects to TWS / IB Gateway (paper or live)
+• Guarantees monotonic order-id allocation via _acquire_order_id()
+• Caches orderStatus / openOrder events for inspection
+• Exposes helpers: send_order(), update_order(), cancel_order_by_id(), cancel_all_orders()
+• Provides convenience methods for portfolio / position snapshots
+
+Only IB-specific plumbing lives here.  Higher-level helpers
+(e.g. contracts.py, orders.py) stay in scripts/* to avoid circular imports.
+"""
+
+from __future__ import annotations  # ← must be the first import on Py < 3.11
+
 import threading
 import time
-from ibapi.client import EClient
-from ibapi.wrapper import EWrapper
-from ibapi.order import Order
-from ib.client import IBClient
-from scripts.contracts import create_contract
-from scripts.orders import create_order
-from scripts.accounts import get_account, get_all_accounts   # <--- if accounts.py is in scripts
-from utils.utils import setup_logger
-from scripts.wrapper import IBWrapper
+from typing import Dict, Any
 
+from ibapi.client import EClient
+from ibapi.order import Order
+from ib.client import IBClient        # type-stubs (same class as EClient)
+from utils.utils import setup_logger
+from scripts.wrapper import IBWrapper  # your subclass of ibapi.wrapper.EWrapper
 
 logger = setup_logger()
 
-class TradingApp(IBWrapper, IBClient):
-    def __init__(self, host='127.0.0.1', port=7497, clientId=1, account=None):
-        self.account = account  # <-- Add this line
+
+# ════════════════════════════════════════════════════════════════════════════
+class TradingApp(IBWrapper, IBClient):  # IBClient == EClient
+    """
+    Single “Swiss-army” connection object.
+    Instantiated once per logical task (e.g. cancel/replace receiver).
+    """
+
+    # ───────────────────────── ctor ────────────────────────────────────────
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 7497,
+        clientId: int = 1,
+        account: str | None = None,
+    ):
+        # User-supplied account (e.g. DUH148810)
+        self.account = account
+
+        # Runtime caches populated by callbacks
+        self.order_statuses: Dict[int, Dict[str, Any]] = {}
+        self.open_orders: Dict[int, Order] = {}
+
+        # Initialize IB API base classes
         IBWrapper.__init__(self)
-        IBClient.__init__(self, wrapper=self)
-        self.connected_event = threading.Event()
+        EClient.__init__(self, wrapper=self)
+
+        # Internal orchestration
+        self._next_order_id: int | None = None
+        self._connected_evt = threading.Event()
+
+        # Start connection + reader thread
         self.connect(host, port, clientId)
         threading.Thread(target=self.run, daemon=True).start()
-        self.connected_event.wait(timeout=10)
+        # Wait until nextValidId arrives (max 10 s)
+        self._connected_evt.wait(timeout=10)
 
+    # ─────────────────────── EWrapper overrides ────────────────────────────
+    def nextValidId(self, orderId: int):
+        """IB will call this on successful connection."""
+        self._next_order_id = orderId
+        self._connected_evt.set()
+        logger.info(f"✅ Connected. Next valid order ID: {orderId}")
 
-    def send_order(self, contract, order):
-        order_id = self.nextOrderId
-        if self.account:
-            order.account = self.account  # ✅ Assign the account here
-        self.placeOrder(orderId=order_id, contract=contract, order=order)
-        self.nextOrderId += 1
-        return order_id
+    def orderStatus(
+        self,
+        orderId,
+        status,
+        filled,
+        remaining,
+        avgFillPrice,
+        permId,
+        parentId,
+        lastFillPrice,
+        clientId,
+        whyHeld,
+        mktCapPrice,
+    ):
+        """Store latest status in dict for quick lookup."""
+        self.order_statuses[orderId] = {
+            "status": status,
+            "filled": filled,
+            "remaining": remaining,
+            "avgFillPrice": avgFillPrice,
+        }
 
+    def openOrder(self, orderId, contract, order, orderState):
+        """Cache the Order object so callers can inspect / clone."""
+        self.open_orders[orderId] = order
 
-    def request_positions(self):
-        self.positions = {}
-        self.reqAccountUpdates(True, self.account)
-        time.sleep(2)
-        return self.positions
+    def error(self, reqId, errorCode, errorString):
+        """
+        Filter out IB's “informational” codes, including 202 (Order Canceled).
+        """
+        if errorCode in (202, 2104, 2106, 2158):
+            return
+        logger.error(f"❌ Error ({errorCode}): {errorString}")
 
-    def request_portfolio(self):
-        self.portfolio = {}
-        self.reqAccountUpdates(True, self.account)
-        time.sleep(2)
-        return self.account_values
+    # ────────────────────────────── helper ────────────────────────────────────
+    def wait_order_active(app: TradingApp, ib_id: int, timeout: float = 3.0) -> bool:
+        """
+        Poll an order until it reaches Submitted / PreSubmitted state.
+
+        Parameters
+        ----------
+        app      : TradingApp
+            The live TradingApp instance.
+        ib_id    : int
+            IB-assigned orderId we’re waiting on.
+        timeout  : float
+            Seconds to wait before giving up.
+
+        Returns
+        -------
+        bool  –  True if the order became active, False on timeout.
+        """
+        start = time.time()
+        while time.time() - start < timeout:
+            info = app.order_statuses.get(ib_id)      # dict or None
+            if info and info.get("status") in ("Submitted", "PreSubmitted"):
+                return True
+            time.sleep(0.25)
+        return False
+    # ────────────────────────────── EWrapper overrides ────────────────────────
+
+    def error(self, reqId, errorCode, errorString):
+        """Filter out noisy ‘informational’ codes."""
+        if errorCode not in (2104, 2106, 2158):
+            logger.error(f"❌ Error ({errorCode}): {errorString}")
+
+    # ───────────────────── internal helpers ────────────────────────────────
+    def _acquire_order_id(self) -> int:
+        """
+        Always returns a fresh order-id.
+
+        • If we already hold a valid _next_order_id, increment & return.
+        • Otherwise, request it with reqIds(-1) and block (≤5 s).
+        """
+        if self._next_order_id is not None:
+            oid = self._next_order_id
+            self._next_order_id += 1
+            return oid
+
+        wait_evt = threading.Event()
+
+        def _tmp_cb(orderId: int):
+            self._next_order_id = orderId
+            wait_evt.set()
+
+        # Temporarily hijack nextValidId
+        orig_cb = self.nextValidId
+        self.nextValidId = _tmp_cb  # type: ignore
+        self.reqIds(-1)
+        wait_evt.wait(timeout=5)
+        self.nextValidId = orig_cb  # restore  # type: ignore
+
+        if self._next_order_id is None:
+            raise RuntimeError("nextValidId never arrived from TWS")
+
+        return self._acquire_order_id()  # recurse now that we have one
+
+    # ───────────────────────── public API ──────────────────────────────────
+    def send_order(self, contract, order) -> int:
+        """
+        Places a *new* order and returns IB-assigned orderId.
+        Always sets order.account if missing and self.account is provided.
+        """
+        if self.account and not order.account:
+            order.account = self.account
+        oid = self._acquire_order_id()
+        self.placeOrder(oid, contract, order)
+        return oid
+
+    def update_order(self, contract, order, existing_id: int) -> int:
+        """
+        Cancel an existing order and immediately place a replacement.
+        Returns the *new* IB orderId.
+        """
+        self.cancelOrder(existing_id)
+        return self.send_order(contract, order)
+
+    def cancel_order_by_id(self, order_id: int):
+        self.cancelOrder(order_id)
 
     def cancel_all_orders(self):
         self.reqGlobalCancel()
 
-    def cancel_order_by_id(self, order_id):
-        self.cancelOrder(order_id)
+    # ───────── optional convenience wrappers (portfolio / positions) ──────
+    def request_positions(self):
+        self.positions: Dict[str, Any] = {}
+        self.reqAccountUpdates(True, self.account or "")
+        time.sleep(2)
+        return self.positions
 
-    def update_order(self, contract, order, order_id):
-        self.cancel_order_by_id(order_id)
-        return self.send_order(contract, order)
+    def request_portfolio(self):
+        self.portfolio: Dict[str, Any] = {}
+        self.reqAccountUpdates(True, self.account or "")
+        time.sleep(2)
+        return self.portfolio
 
-    def nextValidId(self, orderId):
-        self.nextOrderId = orderId
-        self.connected_event.set()
-        logger.info(f"✅ Connected. Next valid order ID: {orderId}")
-
-    def error(self, reqId, errorCode, errorString):
-        if errorCode not in [2104, 2106, 2158]:
-            logger.error(f"❌ Error ({errorCode}): {errorString}")
-
-    def create_order(action, order_type, quantity, limit_price=None, account=None):
-        o = Order()
-        o.action        = action    # 'BUY'/'SELL'
-        o.orderType     = order_type  # 'LMT', 'MKT', etc.
-        o.totalQuantity = quantity
-        if limit_price is not None:
-            o.lmtPrice = limit_price
-        if account:
-            o.account = account
-        o.tif = "DAY"
-        return o
-
-def run_trade(symbol, quantity, action="BUY", order_type="MKT", account_name=None, all_accounts=False):
-    if all_accounts:
-        accounts_to_trade = get_all_accounts()
-    elif account_name:
-        acct_id = get_account(account_name)
-        accounts_to_trade = [acct_id] if acct_id else []
-    else:
-        logger.error("❌ Specify account_name or all_accounts=True.")
-        return
-
-    for account in accounts_to_trade:
-        logger.info(f"🛒 {action} {quantity} {symbol} in {account}...")
-
-        app = TradingApp(clientId=10, account=account)  # ✅ pass account here
-        contract = create_contract(symbol)
-        order = create_order(action, order_type, quantity, account=account)  # already sets it here
-        app.send_order(contract, order)
-
-        logger.info("📊 Fetching portfolio data...")
-        portfolio = app.request_portfolio()
-        print("Net Liquidation:", portfolio.get("NetLiquidation"))
-
-        logger.info("📈 Fetching position data...")
-        positions = app.request_positions()
-        for symbol, pos in positions.items():
-            print(f"{symbol} -> Position: {pos['position']}, Market Price: {pos['market_price']}, PnL: {pos['unrealized_pnl']}")
-
-        app.disconnect()
-        logger.info("🔌 Disconnected.")
+    def wait_order_active(app: TradingApp, ib_id: int, timeout: float = 3.0) -> bool:
+        """Return True once order moves into Submitted/PreSubmitted, else False."""
+        start = time.time()
+        while time.time() - start < timeout:
+            info = app.order_statuses.get(ib_id)        # <- dict or None
+            if info and info.get("status") in ("Submitted", "PreSubmitted"):
+                return True
+            time.sleep(0.25)
+        return False
 
 
-    time.sleep(3)
-
-    logger.info("📊 Fetching portfolio data...")
-    portfolio = app.request_portfolio()
-    print("Net Liquidation:", portfolio.get("NetLiquidation"))
-
-    logger.info("📈 Fetching position data...")
-    positions = app.request_positions()
-    for symbol, pos in positions.items():
-        print(f"{symbol} -> Position: {pos['position']}, Market Price: {pos['market_price']}, PnL: {pos['unrealized_pnl']}")
-
-    app.disconnect()
-    logger.info("🔌 Disconnected.")
-
+# ════════════════════════════════════════════════════════════════════════════
+# rudimentary CLI test (called if run as script)                              #
+# ════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
-    run_trade("AAPL", quantity=1, all_accounts=True)
+    from scripts.contracts import create_contract
+    from scripts.orders import create_order
+
+    app = TradingApp()  # default host/port (7497 paper)
+    contract = create_contract("AAPL")
+    order    = create_order("BUY", "MKT", 1)
+
+    logger.info("Placing 1-share test order …")
+    app.send_order(contract, order)
+
+    # Wait a couple seconds so callbacks print
+    time.sleep(3)
+    app.disconnect()

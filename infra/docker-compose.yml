@@ -1,0 +1,15 @@
+version: "3.9"
+
+services:
+  receiver:
+    build: .
+    environment:
+      - IB_ACCOUNT=DUH148810
+    ports:
+      - "5555:5555"
+      - "9100:9100"
+
+  demo_sender:
+    build: .
+    command: python -m scripts.demo_sender data/demo_orders.yaml --delay 0.5
+    depends_on: [receiver]

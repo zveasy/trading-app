@@ -3,9 +3,9 @@
 # ──────────────────────────────────────────────────────────────
 pyzmq==26.0.3                # ZeroMQ bindings  (ctx / sock)
 python-dotenv==1.0.1         # .env parsing
-protobuf==5.26.1             # Generated cr_pb2 bindings
+protobuf>=6.31,<7            # Generated cr_pb2 bindings
 ibapi==9.81.1.post1              # Interactive Brokers native API
-prometheus_client>=0.17,<1.0 # Metrics exporter (:9100/metrics)
+prometheus_client>=0.22      # Metrics exporter (:9100/metrics)
 PyYAML>=6.0.2,<7.0           # YAML sender file ingestion
 
 # ──────────────────────────────────────────────────────────────
@@ -31,3 +31,4 @@ mypy==1.10.0                 # Static type checker
 # docker==7.1.0              # python-docker remote APIs for CI helpers
 # python-json-logger==2.0.7  # structured logging
 
+protobuf>=6.31,<7

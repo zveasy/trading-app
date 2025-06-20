@@ -1,77 +1,51 @@
 #!/usr/bin/env python3
 """
-helpers.py
-══════════
-Small, reusable helper utilities shared across trading-app scripts.
-
-Current contents
-----------------
-• wait_order_active()  – Poll the in-memory `order_statuses` cache inside
-  a TradingApp-like object until an order reaches a target state.
-
-The helper is *framework-agnostic*: anything that exposes
-`order_statuses: Dict[int, Dict[str, Any]]` will work (real TradingApp or
-a FakeApp in unit-tests).
+scripts.helpers
+────────────────
+Utility helpers shared by multiple scripts.
 """
 
 from __future__ import annotations
-
 import time
-from typing import Dict, Any, Iterable, Sequence
+from typing import Collection, Dict, Any
+
+# We do a *local import* inside the function to avoid circular-importing
+# TradingApp at module-load time.
+DEFAULT_ACTIVE_STATUSES: tuple[str, ...] = ("Submitted", "PreSubmitted")
 
 
-# --------------------------------------------------------------------------- #
-# Helper: wait until an IB order is in a given state                          #
-# --------------------------------------------------------------------------- #
 def wait_order_active(
-    app: "HasOrderStatuses",
-    ib_order_id: int,
-    *,
-    ok_states: Sequence[str] | None = None,
+    app,                       # `scripts.core.TradingApp`
+    ib_id: int,
     timeout: float = 5.0,
-    poll_interval: float = 0.25,
+    active_states: Collection[str] = DEFAULT_ACTIVE_STATUSES,
 ) -> bool:
     """
-    Block (polling) until *ib_order_id* moves into one of *ok_states*.
+    Spin-wait until the given `ib_id` moves into an *active* state
+    (Submitted / PreSubmitted by default).  
+    Returns **True** if the state is reached within `timeout`, else **False**.
 
     Parameters
     ----------
-    app : HasOrderStatuses
-        Any object exposing ``order_statuses: Dict[int, Dict[str, Any]]``
-        where each value maps at least the key ``"status" -> str``.
-    ib_order_id : int
-        The Interactive Brokers order-id we’re watching.
-    ok_states : Sequence[str] | None, default ('Submitted','PreSubmitted')
-        Collection of order-status strings considered *active* enough to
-        continue.  If *None*, defaults to the common active states.
-    timeout : float, default 5.0
-        Maximum seconds to wait before giving up.
-    poll_interval : float, default 0.25
-        Sleep interval between polls (seconds).
+    app : scripts.core.TradingApp
+        An already-connected TradingApp instance.
+    ib_id : int
+        The Interactive Brokers orderId to monitor.
+    timeout : float, optional
+        Seconds to wait before giving up (default 5.0 s).
+    active_states : Collection[str], optional
+        A custom iterable of states that count as *active*.
 
-    Returns
-    -------
-    bool
-        ``True`` if the order reached one of *ok_states* within *timeout*,
-        else ``False``.
+    Notes
+    -----
+    • Reads `app.order_statuses`, which is a
+      `Dict[int, Dict[str, Any]]` populated in `core.TradingApp.orderStatus`.
+    • Sleeps 100 ms between polls to avoid busy-waiting.
     """
-    if ok_states is None:
-        ok_states = ("Submitted", "PreSubmitted")
-
     deadline = time.time() + timeout
-
     while time.time() < deadline:
-        info: Dict[str, Any] | None = app.order_statuses.get(ib_order_id)
-        if info and info.get("status") in ok_states:
+        info: Dict[str, Any] | None = app.order_statuses.get(ib_id)
+        if info and info.get("status") in active_states:
             return True
-        time.sleep(poll_interval)
-
+        time.sleep(0.1)
     return False
-
-
-# --------------------------------------------------------------------------- #
-# Protocol-like hint (avoids importing typing_extensions.Protocol)            #
-# --------------------------------------------------------------------------- #
-class HasOrderStatuses:
-    """Minimal structural type for mypy / type-checkers."""
-    order_statuses: Dict[int, Dict[str, Any]]

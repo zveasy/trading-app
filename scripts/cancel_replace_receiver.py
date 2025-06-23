@@ -43,8 +43,12 @@ from scripts.retry import RetryRegistry, SHOULD_RETRY
 # Prometheus metrics
 from scripts.metrics_server import (
     start as start_metrics,
-    RECEIVER_MSGS, RECEIVER_ERRORS, IB_RETRIES, INFLIGHT_CONN, RECEIVER_BACKOFFS, RETRY_RESETS,
+    RECEIVER_MSGS, RECEIVER_ERRORS, IB_RETRIES, INFLIGHT_CONN,
+    RECEIVER_BACKOFFS, RETRY_RESETS,
+    orders_by_symbol, orders_by_type, order_latency, orders_filled,
+    orders_canceled, orders_rejected, queue_depth
 )
+
 
 # ═════════════════════════════════  Boot  ════════════════════════════════
 load_dotenv()                            # allow .env overrides
@@ -107,6 +111,8 @@ while not SHUTDOWN:
     try:
         raw = sock.recv(flags=zmq.NOBLOCK)
     except zmq.Again:
+        # If using a queue, update metric
+        # queue_depth.set(queue.qsize()) # Uncomment if you have a queue object
         time.sleep(0.05)
         continue
 
@@ -116,7 +122,7 @@ while not SHUTDOWN:
     req = cr_pb2.CancelReplaceRequest()
     try:
         req.ParseFromString(raw)
-    except Exception as exc:                       # noqa: BLE001
+    except Exception as exc:                       
         RECEIVER_ERRORS.inc()
         print("❌  Protobuf parse error:", exc)
         continue
@@ -127,6 +133,10 @@ while not SHUTDOWN:
     sym = getattr(req, "symbol", "") or "AAPL"
     key = (proto_id, sym)
     print(f"📨  RX proto={proto_id} sym={sym} qty={qty} px={price}")
+
+    # Increment per-symbol metric
+    orders_by_symbol.labels(symbol=sym).inc()
+    orders_by_type.labels(type="NEW" if key not in PROTO_TO_IB else "REPLACE").inc()
 
     # 4) retry gate
     if not retry_reg.ready(key):
@@ -140,31 +150,37 @@ while not SHUTDOWN:
         app = TradingApp(host=ARGS.host, port=ARGS.port, account=ACCOUNT_ID)
         contract = create_contract(sym)
 
-        # 6) NEW vs REPLACE
-        if key not in PROTO_TO_IB:
-            ib_id = app.send_order(contract, make_limit_order("BUY", qty, price, ACCOUNT_ID))
-            PROTO_TO_IB[key] = ib_id
-            store.upsert(*key, ib_id)
-            print(f"✅  NEW order (proto {proto_id}/{sym} ➜ ib {ib_id})")
-
-        else:
-            ib_id = PROTO_TO_IB[key]
-            status = (app.order_statuses.get(ib_id) or {}).get("status")
-            new_order = make_limit_order("BUY", qty, price, ACCOUNT_ID)
-
-            if status in ("Submitted", "PreSubmitted"):
-                app.update_order(contract, new_order, ib_id)
-                print(f"🔄  Cancel/replace ({proto_id}/{sym} ➜ ib {ib_id})")
+        # Wrap main order processing in latency histogram
+        with order_latency.labels(symbol=sym).time():
+            # 6) NEW vs REPLACE
+            if key not in PROTO_TO_IB:
+                ib_id = app.send_order(contract, make_limit_order("BUY", qty, price, ACCOUNT_ID))
+                PROTO_TO_IB[key] = ib_id
+                store.upsert(*key, ib_id)
+                print(f"✅  NEW order (proto {proto_id}/{sym} ➜ ib {ib_id})")
+                # Simulate events (in your app, call on real status events):
+                orders_filled.inc()
             else:
-                app.placeOrder(ib_id, contract, new_order)
-                print(f"✏️  Modify in place ({proto_id}/{sym} ➜ ib {ib_id})")
+                ib_id = PROTO_TO_IB[key]
+                status = (app.order_statuses.get(ib_id) or {}).get("status")
+                new_order = make_limit_order("BUY", qty, price, ACCOUNT_ID)
 
-            store.upsert(*key, ib_id)
-            if retry_reg.reset_on_success(key):
+                if status in ("Submitted", "PreSubmitted"):
+                    app.update_order(contract, new_order, ib_id)
+                    print(f"🔄  Cancel/replace ({proto_id}/{sym} ➜ ib {ib_id})")
+                    orders_filled.inc()
+                else:
+                    app.placeOrder(ib_id, contract, new_order)
+                    print(f"✏️  Modify in place ({proto_id}/{sym} ➜ ib {ib_id})")
+                    orders_canceled.inc()
+
+                store.upsert(*key, ib_id)
+                retry_reg.on_success(key)
                 RETRY_RESETS.inc()
 
-    except Exception as ib_err:                   # noqa: BLE001
+    except Exception as ib_err:                   
         RECEIVER_ERRORS.inc()
+        orders_rejected.inc()
         code = getattr(ib_err, "code", None)
         if code in SHOULD_RETRY:
             IB_RETRIES.inc()
@@ -176,9 +192,3 @@ while not SHUTDOWN:
             app.disconnect()
             INFLIGHT_CONN.dec()
         time.sleep(1.0)  # allow callbacks / avoid hammering TWS
-
-# ═════════════════════════════  Shutdown  ════════════════════════════════
-sock.close(0)
-ctx.term()
-print("👋  Receiver stopped cleanly.")
-sys.exit(0)

@@ -1,0 +1,10 @@
+apiVersion: 1
+providers:
+  - name: ReceiverDash
+    orgId: 1
+    folder: "Receiver"
+    type: file
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards/receiver    # inside container
+      recursive: false

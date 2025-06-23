@@ -7,14 +7,17 @@
   "tags": ["receiver"],
   "timezone": "browser",
   "time": { "from": "now-15m", "to": "now" },
-  "timepicker": { "refresh_intervals": ["5s","10s","30s","1m","5m"] },
-
+  "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"] },
   "panels": [
     {
       "type": "timeseries",
       "title": "Messages vs Errors",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
-      "fieldConfig": { "defaults": { "drawStyle": "lines", "lineWidth": 2 } },
+      "fieldConfig": { "defaults": { "drawStyle": "lines", "lineWidth": 2 }, "overrides": [] },
       "targets": [
         {
           "expr": "rate(receiver_msgs_total[1m])",
@@ -28,12 +31,15 @@
         }
       ]
     },
-
     {
       "type": "timeseries",
       "title": "Retries & Back-offs",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
-      "fieldConfig": { "defaults": { "drawStyle": "lines", "lineWidth": 2 } },
+      "fieldConfig": { "defaults": { "drawStyle": "lines", "lineWidth": 2 }, "overrides": [] },
       "targets": [
         {
           "expr": "rate(ib_retries_total[1m])",
@@ -52,12 +58,15 @@
         }
       ]
     },
-
     {
       "type": "timeseries",
       "title": "In-flight IB connections",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "gridPos": { "x": 0, "y": 8, "w": 24, "h": 6 },
-      "fieldConfig": { "defaults": { "drawStyle": "lines", "lineWidth": 2 } },
+      "fieldConfig": { "defaults": { "drawStyle": "lines", "lineWidth": 2 }, "overrides": [] },
       "targets": [
         {
           "expr": "inflight_ib_connections",
@@ -67,12 +76,14 @@
       ]
     }
   ],
-
   "annotations": {
     "list": [
       {
         "builtIn": 1,
-        "datasource": { "type": "-- Grafana --", "uid": "-- grafana --" },
+        "datasource": {
+          "type": "-- Grafana --",
+          "uid": "-- grafana --"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0,211,255,1)",
@@ -81,12 +92,9 @@
       }
     ]
   },
-
   "templating": { "list": [] },
-
   "__requires": [
     { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "2.x" },
     { "type": "panel", "id": "timeseries", "name": "Time series", "version": "8.x" }
   ]
 }
-

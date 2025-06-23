@@ -1,0 +1,10 @@
+# Syntactically valid YAML, but missing required fields for your receiver to parse
+- proto: 10001
+  symbol: "AAPL"
+  qty: "INVALID"      # Should be an integer, not a string!
+  px: 150.00
+
+- proto: 99999
+  symbol:             # Missing value
+  qty: 100
+  px: 120.00

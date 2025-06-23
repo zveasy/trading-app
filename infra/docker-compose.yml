@@ -1,45 +1,57 @@
-version: "3.9"
+version: "3.9"   # Compose no longer needs this field, but it’s harmless
 
-# infra/docker-compose.yml
 services:
+  # ────────────────── Receiver ──────────────────
   receiver:
     build:
-      context: ..
-      dockerfile: Dockerfile          # ← your canonical Dockerfile
+      context: ..          # repo root (one level above infra/)
+      dockerfile: infra/Dockerfile 
     environment:
       - IB_ACCOUNT=DUH148810
+      - IB_HOST=host.docker.internal
+      - IB_PORT=7497
     ports:
-      - "5555:5555"
-      - "9100:9100"
+      - "5555:5555"        # ZMQ SUB/REP, exposed for local tests
+      - "9100:9100"        # Prometheus metrics
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9100/metrics"]
+      start_period: 10s # wait for the app to start
+      interval: 30s
+      timeout: 5s
+      retries: 5
 
+  # ────────────────── Demo Sender ───────────────
   demo_sender:
-    image: python:3.11-slim
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
     working_dir: /app
-    volumes:
-      - ..:/app
-    command: >
-      python -m scripts.demo_sender data/demo_orders.yaml --delay 0.5
+    command: >-
+      python -m scripts.demo_sender data/demo_orders.yaml --delay 0.5 --loop
     depends_on:
       - receiver
+    restart: unless-stopped   # optional but handy for long loops
 
+  # ────────────────── Prometheus ────────────────
   prometheus:
-    image: prom/prometheus:latest     # <─ or prom/prometheus:v2.52.0
+    image: prom/prometheus:latest
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro   # ./ → infra/
     ports:
       - "9090:9090"
+    restart: unless-stopped
 
-
+  # ────────────────── Grafana ───────────────────
   grafana:
     image: grafana/grafana:10.4.2
     ports:
       - "3000:3000"
     volumes:
-      # ① SINGLE FILE → single file inside the container
-      - ./feat/grafana/datasources.yml:/etc/grafana/provisioning/datasources/ds.yml:ro
-
-      # ② SINGLE FILE → dashboard provider
-      - ./feat/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
-
-      # ③ FOLDER with JSON dashboards
-      - ./feat/grafana/dashboards/receiver:/var/lib/grafana/dashboards/receiver:ro
+      # Paths are relative to infra/
+      - ./grafana/datasources.yml:/etc/grafana/provisioning/datasources/ds.yml:ro
+      - ./grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./grafana/dashboards/receiver:/var/lib/grafana/dashboards/receiver:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped

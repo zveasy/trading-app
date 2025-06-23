@@ -1,8 +1,11 @@
 version: "3.9"
 
+# infra/docker-compose.yml
 services:
   receiver:
-    build: .
+    build:
+      context: ..
+      dockerfile: Dockerfile          # ← your canonical Dockerfile
     environment:
       - IB_ACCOUNT=DUH148810
     ports:
@@ -10,6 +13,33 @@ services:
       - "9100:9100"
 
   demo_sender:
-    build: .
-    command: python -m scripts.demo_sender data/demo_orders.yaml --delay 0.5
-    depends_on: [receiver]
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ..:/app
+    command: >
+      python -m scripts.demo_sender data/demo_orders.yaml --delay 0.5
+    depends_on:
+      - receiver
+
+  prometheus:
+    image: prom/prometheus:latest     # <─ or prom/prometheus:v2.52.0
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    ports:
+      - "3000:3000"
+    volumes:
+      # ① SINGLE FILE → single file inside the container
+      - ./feat/grafana/datasources.yml:/etc/grafana/provisioning/datasources/ds.yml:ro
+
+      # ② SINGLE FILE → dashboard provider
+      - ./feat/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+
+      # ③ FOLDER with JSON dashboards
+      - ./feat/grafana/dashboards/receiver:/var/lib/grafana/dashboards/receiver:ro

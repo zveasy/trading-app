@@ -43,7 +43,7 @@ from scripts.retry import RetryRegistry, SHOULD_RETRY
 # Prometheus metrics
 from scripts.metrics_server import (
     start as start_metrics,
-    RECEIVER_MSGS, RECEIVER_ERRORS, IB_RETRIES, INFLIGHT_CONN,
+    RECEIVER_MSGS, RECEIVER_ERRORS, IB_RETRIES, INFLIGHT_CONN, RECEIVER_BACKOFFS, RETRY_RESETS,
 )
 
 # ═════════════════════════════════  Boot  ════════════════════════════════
@@ -130,6 +130,7 @@ while not SHUTDOWN:
 
     # 4) retry gate
     if not retry_reg.ready(key):
+        RECEIVER_BACKOFFS.inc()
         continue
 
     app = None
@@ -159,6 +160,8 @@ while not SHUTDOWN:
                 print(f"✏️  Modify in place ({proto_id}/{sym} ➜ ib {ib_id})")
 
             store.upsert(*key, ib_id)
+            if retry_reg.reset_on_success(key):
+                RETRY_RESETS.inc()
 
     except Exception as ib_err:                   # noqa: BLE001
         RECEIVER_ERRORS.inc()

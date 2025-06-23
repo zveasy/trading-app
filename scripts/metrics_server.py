@@ -1,28 +1,29 @@
+#!/usr/bin/env python3
 """
-scripts.metrics_server
-––––––––––––––––––––––
-Exports Prometheus metrics on :9100 (default).
+Prometheus metrics registry for the Cancel/Replace stack.
+Import the symbols you need and call `start()` once at process-boot.
+"""
 
-Import in any module:
-    from scripts.metrics_server import (
-        start as start_metrics,
-        RECEIVER_MSGS, RECEIVER_ERRORS, IB_RETRIES, INFLIGHT_CONN
-    )
-"""
 from prometheus_client import Counter, Gauge, start_http_server
 
-# ───────────────────────── Counters ──────────────────────────────────────
-RECEIVER_MSGS   = Counter("receiver_msgs_total",   "Total messages received")
-RECEIVER_ERRORS = Counter("receiver_errors_total", "Total receiver errors")
-IB_RETRIES      = Counter("ib_retries_total",      "IB retry attempts")
+# ── Core counters ───────────────────────────────────────────────────────────
+RECEIVER_MSGS     = Counter("receiver_msgs_total", "Total protobuf messages received")
+RECEIVER_ERRORS   = Counter("receiver_errors_total", "Total errors seen in receiver loop")
+IB_RETRIES        = Counter("ib_retries_total", "Total retry-backoff attempts (IB errors)")
+RECEIVER_BACKOFFS = Counter("receiver_backoff_total", "Dropped messages while still backing off")
+RETRY_RESETS      = Counter("retry_reset_total", "Times a key’s back-off window was cleared")
 
-# ───────────────────────── Gauges ────────────────────────────────────────
-INFLIGHT_CONN   = Gauge("inflight_ib_connections", "Open IB API connections")
+# ── Gauges ───────────────────────────────────────────────────────────────────
+INFLIGHT_CONN     = Gauge("inflight_ib_connections", "Open IB Gateway/TWS connections")
 
-# ───────────────────────── Helper ────────────────────────────────────────
+# ── Start helper ─────────────────────────────────────────────────────────────
 def start(port: int = 9100) -> None:
     """
-    Spin up the Prometheus HTTP exporter (non-blocking).
-    Call exactly once per process (subsequent calls are no-ops).
+    Launch a WSGI server on the given port (default 9100).
+    Safe to call multiple times – subsequent calls are ignored.
     """
-    start_http_server(port)
+    try:
+        # If already started this will raise OSError; swallow it.
+        start_http_server(port)
+    except OSError:
+        pass

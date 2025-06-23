@@ -1,0 +1,13 @@
+# grafana/dashboards.yml
+apiVersion: 1
+
+providers:
+  - name: ReceiverDash
+    orgId: 1
+    folder: "Receiver"
+    type: file
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards/receiver   # must exist **inside** container
+      recursive: false
+

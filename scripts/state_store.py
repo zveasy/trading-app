@@ -9,33 +9,38 @@ Tiny wrapper around an on-disk SQLite DB that persists the mapping
 from __future__ import annotations
 import sqlite3
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Union
+
+DEFAULT_DB = "var/state.db"
 
 
 class StateStore:
     """
-    Usage
-    -----
-    store = StateStore("var/state.db")
-    data  = store.load()                    # {(proto_id, sym): ib_id}
+    Example
+    -------
+    store = StateStore(DEFAULT_DB)
     store.upsert(10001, "AAPL", 42)
+    assert store.load() == {(10001, "AAPL"): 42}
     """
 
-    def __init__(self, db_path: str | Path):
+    # ───────────────────────────────────────── init ───────────────────
+    def __init__(self, db_path: Union[str, Path] = DEFAULT_DB):
         self.path = Path(db_path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
 
-    # ────────────────────────────────────────────────────────────────────
-    # public API
-    # ────────────────────────────────────────────────────────────────────
-    def load(self) -> Dict[Tuple[int, str], int]:
-        """Return the whole mapping as a dict."""
+    # public API ──────────────────────────────────────────────────────
+    def load_all(self) -> Dict[Tuple[int, str], int]:
         with self._conn() as conn:
             rows = conn.execute(
                 "SELECT proto_id, symbol, ib_id FROM mapping"
             ).fetchall()
         return {(pid, sym): ib for pid, sym, ib in rows}
+
+    def load(self) -> Dict[Tuple[int, str], int]:
+        """Backward-compat alias used in tests."""
+        return self.load_all()
+
 
     def upsert(self, proto_id: int, symbol: str, ib_id: int) -> None:
         """Insert or update a single record."""
@@ -51,9 +56,7 @@ class StateStore:
             )
             conn.commit()
 
-    # ────────────────────────────────────────────────────────────────────
-    # internals
-    # ────────────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────── internals ────────────────
     def _conn(self) -> sqlite3.Connection:
         return sqlite3.connect(self.path)
 

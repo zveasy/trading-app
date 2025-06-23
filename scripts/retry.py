@@ -2,118 +2,87 @@
 """
 RetryRegistry
 ─────────────
-A small helper that throttles re-processing of a (proto_id, symbol) key
-after we receive *retry-worthy* Interactive Brokers error codes.
+Keyed exponential back-off with auto-reset.
 
-Key features
-============
-* Exponential back-off with a capped maximum delay.
-* Automatic reset of back-off once we observe a SUCCESS for that key.
-* Thread-safe (using ``threading.Lock``).
+Rules
+-----
+1. An entry keeps two numbers:
+     • attempts  – how many errors we’ve seen
+     • next_ok   – timestamp when processing is allowed again
+2. For *retry-worthy* error codes (in SHOULD_RETRY) we block as soon as
+   attempts ≥ max_attempts.
+3. For all other errors we block only when attempts > max_attempts.
+4. on_success(key) wipes the entry entirely.
 """
 
 from __future__ import annotations
-
-import threading
-import time
+import threading, time
 from typing import Dict, Tuple
 
+# IB codes worth retrying (extend when needed)
+SHOULD_RETRY: set[int] = {1100, 1101, 200, 202, 104}
 
-# IB error codes that are worth retrying (extend as needed)
-SHOULD_RETRY = {
-    1100,   # Connectivity lost
-    1101,   # Connectivity restored – session reset
-    200,    # No security definition found
-    202,    # Order cancelled (but we still need to place a new one)
-    104,    # Cannot modify a filled order (usually transient)
-}
+Key = Tuple[int, str]           # (proto_id, symbol)
 
-Key = Tuple[int, str]  # (proto_id, sym)
+
+class _Entry:                    # internal state
+    __slots__ = ("attempts", "next_ok")
+    def __init__(self) -> None:
+        self.attempts = 0
+        self.next_ok  = 0.0
 
 
 class RetryRegistry:
-    """
-    Tracks the *next allowed time* a key may be processed again.
-
-    Parameters
-    ----------
-    max_attempts : int
-        Number of exponential steps before we clamp at ``max_delay``.
-    base_delay : float
-        The initial delay in **seconds** (step 0 → 1).
-    max_delay : float
-        Upper bound for back-off delay in **seconds**.
-    """
-
     def __init__(
         self,
         *,
-        max_attempts: int = 4,
+        max_attempts: int = 3,
         base_delay: float = 1.0,
         max_delay: float = 60.0,
     ) -> None:
         self.max_attempts = max_attempts
         self.base_delay   = base_delay
         self.max_delay    = max_delay
+        self._state: Dict[Key, _Entry] = {}
+        self._lock = threading.Lock()
 
-        self._lock  = threading.Lock()
-        # key → (next_allowed_ts, attempt_idx)
-        self._state: Dict[Key, Tuple[float, int]] = {}
-
-    # ───────────────────────────────────────────────────────────
-    # Public helpers
-    # ───────────────────────────────────────────────────────────
+    # ───────────────────────────── helpers ─────────────────────────────
     def ready(self, key: Key) -> bool:
-        """
-        Return ``True`` if *now* is past the stored ``next_allowed_ts``
-        **or** if the key is unseen (implicitly ready).
-        """
+        """True if *now* ≥ next_ok or key unseen."""
         with self._lock:
-            ts, _ = self._state.get(key, (0.0, 0))
-            return time.time() >= ts
+            entry = self._state.get(key)
+            return True if entry is None else time.time() >= entry.next_ok
+
+    def _calc_delay(self, attempts_over: int) -> float:
+        """Exponential back-off but never beyond max_delay."""
+        return min(self.base_delay * (2 ** attempts_over), self.max_delay)
 
     def on_error(self, key: Key, err_code: int) -> None:
-        """
-        Record a retry-worthy error for *key* and advance exponential back-off.
-
-        Non-retry codes are ignored so callers can still invoke ``ready()`` freely.
-        """
-        if err_code not in SHOULD_RETRY:
-            return
-
+        """Register an error and (maybe) start / extend back-off."""
         with self._lock:
-            _, attempt = self._state.get(key, (0.0, 0))
+            entry = self._state.setdefault(key, _Entry())
+            entry.attempts += 1
 
-            # Exponential delay calculation
-            if attempt >= self.max_attempts:
-                delay = self.max_delay
+            # decide when to start blocking
+            if (
+                (err_code in SHOULD_RETRY and entry.attempts >= self.max_attempts)
+                or (err_code not in SHOULD_RETRY and entry.attempts > self.max_attempts)
+            ):
+                over = entry.attempts - self.max_attempts
+                entry.next_ok = time.time() + self._calc_delay(max(0, over))
             else:
-                delay = min(self.base_delay * (2 ** attempt), self.max_delay)
+                # still inside grace window
+                entry.next_ok = 0.0
 
-            self._state[key] = (time.time() + delay, attempt + 1)
-
-    # ---------------------------------------------------------------------
-    # Success = clear state
-    # ---------------------------------------------------------------------
     def on_success(self, key: Key) -> bool:
-        """
-        Clear retry/back-off state for *key*.
-
-        Returns ``True`` iff there *was* a pending back-off entry that we removed.
-        """
+        """Clear state; return True if an entry existed."""
         with self._lock:
-            existed = key in self._state
-            if existed:
-                del self._state[key]
-            return existed
+            return self._state.pop(key, None) is not None
 
-    # Backwards-compat alias (older code called .reset_on_success)
+    # backwards-compat alias
     reset_on_success = on_success
 
-    # ───────────────────────────────────────────────────────────
-    # Debug helpers (optional)
-    # ───────────────────────────────────────────────────────────
-    def _dump(self) -> Dict[Key, Tuple[float, int]]:
-        """Return a *copy* of internal state (for testing / debug)."""
+    # debugging hook
+    def _dump(self):
         with self._lock:
-            return dict(self._state)
+            return {k: (v.attempts, v.next_ok) for k, v in self._state.items()}

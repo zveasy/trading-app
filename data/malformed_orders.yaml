@@ -1,0 +1,9 @@
+- proto: 10001
+  symbol: ""
+  qty: 100
+  px: 150.00
+
+- proto: 10002
+  # symbol missing entirely
+  qty: 10
+  px: 300.00

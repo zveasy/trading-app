@@ -1,0 +1,12 @@
+# feat/grafana/datasources.yml
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy          # Grafana will proxy queries to Prometheus
+    url: http://prometheus:9090
+    isDefault: true        # marks it as the default DS
+    editable: false        # users cannot modify it from the UI
+

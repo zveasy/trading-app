@@ -1,0 +1,38 @@
+# ──────────────────────────────────────────────────────────────
+# Core runtime dependencies
+# ──────────────────────────────────────────────────────────────
+pyzmq==26.0.3                # ZeroMQ bindings  (ctx / sock)
+python-dotenv==1.0.1         # .env parsing
+protobuf>=6.31,<7            # Generated cr_pb2 bindings
+ibapi==9.81.1.post1          # Interactive Brokers native API
+prometheus_client>=0.22      # Metrics exporter (:9100/metrics)
+PyYAML>=6.0.2,<7.0           # YAML sender file ingestion
+
+# ──────────────────────────────────────────────────────────────
+# Helper / utilities
+# ──────────────────────────────────────────────────────────────
+typing_extensions>=4.11      # For Py < 3.12
+pydantic<3                   # (optional) structured validation
+
+# ──────────────────────────────────────────────────────────────
+# Development / testing
+# ──────────────────────────────────────────────────────────────
+pytest>=8.4                  # Unit-test runner
+pytest-cov>=5.0              # Coverage reporting
+black==24.4.2                # Code formatter
+isort==5.13.2                # Import sorter
+ruff==0.4.8                  # Linter
+mypy==1.10.0                 # Static type checker
+
+# ──────────────────────────────────────────────────────────────
+# Core runtime dependencies (continued)
+# ──────────────────────────────────────────────────────────────
+pandas>=2.2,<3             # used by utils.utils.setup_logger
+
+
+# ──────────────────────────────────────────────────────────────
+# Optional – comment if unused
+# ──────────────────────────────────────────────────────────────
+# grafana-api==1.1.0         # Programmatic dashboard upload
+# docker==7.1.0              # Python docker-client for CI helpers
+# python-json-logger==2.0.7  # Structured logging

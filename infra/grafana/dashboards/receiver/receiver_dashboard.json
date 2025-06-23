@@ -1,0 +1,92 @@
+{
+  "__schemaVersion": 38,
+  "uid": "receiver-metrics",
+  "title": "Cancel/Replace Receiver",
+  "version": 1,
+  "refresh": "10s",
+  "tags": ["receiver"],
+  "timezone": "browser",
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": { "refresh_intervals": ["5s","10s","30s","1m","5m"] },
+
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Messages vs Errors",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "drawStyle": "lines", "lineWidth": 2 } },
+      "targets": [
+        {
+          "expr": "rate(receiver_msgs_total[1m])",
+          "legendFormat": "msgs/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(receiver_errors_total[1m])",
+          "legendFormat": "errors/s",
+          "refId": "B"
+        }
+      ]
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Retries & Back-offs",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "drawStyle": "lines", "lineWidth": 2 } },
+      "targets": [
+        {
+          "expr": "rate(ib_retries_total[1m])",
+          "legendFormat": "IB retries/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(receiver_backoffs_total[1m])",
+          "legendFormat": "back-offs/s",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(retry_resets_total[1m])",
+          "legendFormat": "reset/s",
+          "refId": "C"
+        }
+      ]
+    },
+
+    {
+      "type": "timeseries",
+      "title": "In-flight IB connections",
+      "gridPos": { "x": 0, "y": 8, "w": 24, "h": 6 },
+      "fieldConfig": { "defaults": { "drawStyle": "lines", "lineWidth": 2 } },
+      "targets": [
+        {
+          "expr": "inflight_ib_connections",
+          "legendFormat": "open conn",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "-- Grafana --", "uid": "-- grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0,211,255,1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+
+  "templating": { "list": [] },
+
+  "__requires": [
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "2.x" },
+    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "8.x" }
+  ]
+}
+

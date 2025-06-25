@@ -13,6 +13,8 @@ python -m scripts.cancel_replace_receiver \
         --account DUH148810 \
         --host    127.0.0.1 \
         --port    7497 \
+        --ib_host_2 127.0.0.2 \
+        --ib_port_2 7498 \
         --zmq     "tcp://*:5555" \
         --db      var/state.db
 """
@@ -58,15 +60,23 @@ start_metrics()                          # exporter on http://localhost:9100/met
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser("IB Cancel/Replace Receiver (persistent+metrics)")
     p.add_argument("--account", default=None, help="IB account (paper/live)")
-    p.add_argument("--host",    default="127.0.0.1", help="TWS / IBGW host")
-    p.add_argument("--port",    type=int, default=7497, help="TWS / IBGW port")
+    p.add_argument("--host",    default="127.0.0.1", help="Primary TWS / IBGW host")
+    p.add_argument("--port",    type=int, default=7497, help="Primary TWS / IBGW port")
+    p.add_argument("--ib_host_2", default=None, help="Secondary IBGW host")
+    p.add_argument("--ib_port_2", type=int, default=None, help="Secondary IBGW port")
     p.add_argument("--zmq",     default="tcp://*:5555", help="ZMQ PULL bind addr")
     p.add_argument("--db",      default="var/state.db", help="SQLite DB file")
     return p.parse_args()
 
-
 ARGS       = parse_args()
 ACCOUNT_ID = ARGS.account or "DUH148810"
+
+# -- Prepare list of host/port tuples for fail-over logic
+PRIMARY    = (ARGS.host, ARGS.port)
+SECONDARY  = (ARGS.ib_host_2, ARGS.ib_port_2) if ARGS.ib_host_2 and ARGS.ib_port_2 else None
+IB_ENDPOINTS = [PRIMARY]
+if SECONDARY:
+    IB_ENDPOINTS.append(SECONDARY)
 
 # ── Persistent map --------------------------------------------------------
 store = StateStore(ARGS.db)
@@ -85,12 +95,10 @@ retry_reg = RetryRegistry(max_attempts=3, base_delay=1.0)
 # ── Graceful shutdown -----------------------------------------------------
 SHUTDOWN = False
 
-
 def _sig_handler(_sig, _frm):
     global SHUTDOWN
     SHUTDOWN = True
     print("\n🔌  Shutdown requested … finishing loop")
-
 
 signal.signal(signal.SIGINT, _sig_handler)
 signal.signal(signal.SIGTERM, _sig_handler)
@@ -99,7 +107,6 @@ signal.signal(signal.SIGTERM, _sig_handler)
 def make_limit_order(side: str, qty: int, px: float, acct: str):
     return make_order(action=side, order_type="LMT",
                       quantity=qty, limit_px=px, account=acct)
-
 
 # ── protobuf schema -------------------------------------------------------
 # (import kept here to avoid heavy cost if script used elsewhere)
@@ -111,8 +118,6 @@ while not SHUTDOWN:
     try:
         raw = sock.recv(flags=zmq.NOBLOCK)
     except zmq.Again:
-        # If using a queue, update metric
-        # queue_depth.set(queue.qsize()) # Uncomment if you have a queue object
         time.sleep(0.05)
         continue
 
@@ -145,11 +150,12 @@ while not SHUTDOWN:
 
     app = None
     try:
-        # 5) IB connect
+        # 5) IB connect with fail-over
         INFLIGHT_CONN.inc()
-        app = TradingApp(host=ARGS.host, port=ARGS.port, account=ACCOUNT_ID)
-        contract = create_contract(sym)
+        app = TradingApp(hosts_ports=IB_ENDPOINTS, account=ACCOUNT_ID)   # <-- expects round-robin connect logic
+        app.connect()   # connect() will try both endpoints as needed
 
+        contract = create_contract(sym)
         # Wrap main order processing in latency histogram
         with order_latency.labels(symbol=sym).time():
             # 6) NEW vs REPLACE

@@ -2,20 +2,32 @@
 """
 scripts.core
 ────────────
-Unified wrapper around Interactive Brokers’ API – now with lightweight
-fail-over and a test-friendly connection hook.
+Unified wrapper around Interactive Brokers’ API – with lightweight
+fail-over **and** a test-friendly reconnect hook.
+
+Highlights
+──────────
+* `_connect_actual()` is the *only* place touching the socket – easy to
+  monkey-patch in unit tests.
+* Constructor accepts either a single `(host, port)` *or*
+  `[(host1,port1), (host2,port2)…]` fall-back chain.
+* One automatic retry when the very first dial raises
+  ``ConnectionRefusedError``.
+* **NEW**: calling `app.connect()` *without* arguments will re-run the
+  fail-over loop – exactly what the fail-over test does.
 """
 
 from __future__ import annotations
 
-import os                              # NEW-TEST-SAFE
+import os
 import threading
 import time
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ibapi.client import EClient
 from ibapi.order  import Order
-from ib.client    import IBClient            # stubs:  EClient alias
+from ib.client    import IBClient           # typing alias for EClient
+
 from utils.utils  import setup_logger
 from scripts.wrapper import IBWrapper
 
@@ -26,13 +38,8 @@ HostPort = Tuple[str, int]
 # ════════════════════════════════════════════════════════════════════════════
 class TradingApp(IBWrapper, IBClient):
     """
-    Swiss-army Interactive Brokers connection with minimal fail-over.
-
-    * `_connect_actual()` is the only real socket touch-point – tests can
-      monkey-patch it.
-    * Accepts a single `(host, port)` **or** a list of fallback pairs.
-    * One automatic retry if the very first dial raises
-      ``ConnectionRefusedError``.
+    Swiss-army Interactive Brokers connection with minimal fail-over
+    plus monkey-patch-friendly hooks for testing.
     """
 
     # ───────────────────────── constructor ────────────────────────────────
@@ -45,7 +52,7 @@ class TradingApp(IBWrapper, IBClient):
         *,
         auto_req_ids: bool = False,
     ):
-        self.account = account
+        self.account      = account
         self.auto_req_ids = auto_req_ids
 
         self.order_statuses: Dict[int, Dict[str, Any]] = {}
@@ -56,65 +63,83 @@ class TradingApp(IBWrapper, IBClient):
 
         self._next_order_id: Optional[int] = None
         self._connected_evt                = threading.Event()
+        self._client_id                    = clientId   # remember for reconnect
 
-        # ------------ host list normalisation ----------------------------
+        # ------- normalise host list ------------------------------------
         if (
             isinstance(host, (list, tuple))
             and host
             and isinstance(host[0], (list, tuple))
         ):
-            self._hosts: List[HostPort] = list(host)         # already list
-        else:                                                # single host
-            self._hosts = [(host, port)]                     # type: ignore[arg-type]
+            self._hosts: List[HostPort] = list(host)
+        else:
+            self._hosts = [(host, port)]                # type: ignore[arg-type]
 
-        # ------------ dial (fail-over aware) -----------------------------
-        self._attempt_connect_chain(clientId)
+        # ------- first connect attempt ----------------------------------
+        self._run_connect_loop(clientId)
 
-        # ------------ reader thread --------------------------------------
+        # ------- reader thread + wait for nextValidId -------------------
         threading.Thread(target=self.run, daemon=True).start()
 
-        # ------------ wait for nextValidId (skip in stub mode) -----------
         if (
-            not self._connected_evt.wait(10)                 # timeout
+            not self._connected_evt.wait(10)
             and self._next_order_id is None
         ):
-            # NEW-TEST-SAFE:  inside pytest we allow the tests to pre-seed
-            # `_next_order_id` after construction, so don’t raise – just warn.
-            if "PYTEST_CURRENT_TEST" in os.environ:          # running in tests
+            if "PYTEST_CURRENT_TEST" in os.environ:     # running under pytest
                 logger.warning("nextValidId missing – assuming test stub.")
             else:
-                raise RuntimeError("Timed-out waiting for nextValidId from TWS")
+                raise RuntimeError(
+                    "Timed-out waiting for nextValidId from TWS / IBGW"
+                )
 
         if self.auto_req_ids:
             self.reqIds(-1)
 
-    # ────────────────────────── connection helpers ───────────────────────
-    def _attempt_connect_chain(self, clientId: int) -> None:
+    # ──────────────────────── public connect API -- NEW ──────────────────
+    def connect(                                           # noqa: N802
+        self,
+        host: str | None = None,
+        port: int | None = None,
+        clientId: int | None = None,
+    ):
         """
-        Try each host once; if only one host is supplied we try it twice
-        (basic ‘single-host retry’ behaviour).
+        *Two* behaviours:
+
+        • With arguments → same signature as `ibapi.client.EClient.connect`
+          (used by the constructor).
+        • With **no** arguments → re-run the stored fail-over chain
+          (handy for tests that patch `_connect_actual`).
+        """
+        if host is None:                                   # reconnect mode
+            self._connected_evt.clear()
+            self._run_connect_loop(clientId or self._client_id)
+        else:                                              # real low-level dial
+            self._connect_actual(host, port or 7497, clientId or self._client_id)
+
+    # ------------------------------ patch-point ---------------------------
+    def _connect_actual(self, host: str, port: int, clientId: int):
+        """Real socket dial – tests can monkey-patch this."""
+        super().connect(host, port, clientId)              # type: ignore[arg-type]
+
+    # ------------------------- fail-over loop helper ----------------------
+    def _run_connect_loop(self, clientId: int) -> None:
+        """
+        Dial each host once; if only a single host is configured, we try it
+        twice (simple retry).  Raises the *last* ConnectionRefusedError.
         """
         attempts = self._hosts * (2 if len(self._hosts) == 1 else 1)
         last_exc: Optional[Exception] = None
 
         for h, p in attempts:
             try:
-                self.connect(h, p, clientId)        # may be monkey-patched
-                return                              # success 🎉
+                self._connect_actual(h, p, clientId)
+                return                                 # success 🎉
             except ConnectionRefusedError as exc:
                 last_exc = exc
                 logger.warning("Primary %s:%s refused – trying next …", h, p)
 
         if last_exc:
             raise last_exc
-
-    # Thin indirection so tests can monkey-patch `TradingApp.connect`.
-    def connect(self, host: str, port: int, clientId: int):  # noqa: N802
-        self._connect_actual(host, port, clientId)
-
-    # Single real socket call – easiest to patch in tests
-    def _connect_actual(self, host: str, port: int, clientId: int) -> None:
-        super().connect(host, port, clientId)                # type: ignore[arg-type]
 
     # ─────────────────────── EWrapper overrides ──────────────────────────
     def nextValidId(self, orderId: int):
@@ -137,7 +162,7 @@ class TradingApp(IBWrapper, IBClient):
         if code not in (202, 399, 2104, 2106, 2158):
             logger.error("❌ Error (%s): %s", code, msg)
 
-    # ───────────────────────── id allocator ──────────────────────────────
+    # ───────────────────── id allocator (blocking) ───────────────────────
     def _acquire_order_id(self) -> int:
         if self._next_order_id is not None:
             oid, self._next_order_id = self._next_order_id, self._next_order_id + 1
@@ -158,9 +183,9 @@ class TradingApp(IBWrapper, IBClient):
         if self._next_order_id is None:
             raise RuntimeError("nextValidId never arrived")
 
-        return self._acquire_order_id()     # recurse after id arrives
+        return self._acquire_order_id()
 
-    # ───────────────────────── user-facing helpers ───────────────────────
+    # ───────────────────── user-facing helpers ───────────────────────────
     def send_order(self, contract, order) -> int:
         if self.account and not getattr(order, "account", None):
             order.account = self.account
@@ -178,7 +203,7 @@ class TradingApp(IBWrapper, IBClient):
     def cancel_all_orders(self):
         self.reqGlobalCancel()
 
-    # Convenience snapshots (blocking)
+    # snapshots (blocking – convenience only)
     def request_positions(self):
         self.positions: Dict[str, Any] = {}
         self.reqAccountUpdates(True, self.account or "")
@@ -194,10 +219,11 @@ class TradingApp(IBWrapper, IBClient):
 
 # ════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
+    # quick smoke-test (will still need a running TWS/IBGW)
     from scripts.contracts import create_contract
     from scripts.orders    import create_order
 
     app = TradingApp()
     app.send_order(create_contract("AAPL"), create_order("BUY", "MKT", 1))
-    time.sleep(3)
+    time.sleep(2)
     app.disconnect()

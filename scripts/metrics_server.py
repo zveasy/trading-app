@@ -10,6 +10,7 @@ from prometheus_client import Counter, Gauge,  Histogram, start_http_server
 RECEIVER_MSGS     = Counter("receiver_msgs_total", "Total protobuf messages received")
 RECEIVER_ERRORS   = Counter("receiver_errors_total", "Total errors seen in receiver loop")
 IB_RETRIES        = Counter("ib_retries_total", "Total retry-backoff attempts (IB errors)")
+IB_ERROR_CODES    = Counter("ib_error_codes_total", "IB errors by code", ["code"])
 RECEIVER_BACKOFFS = Counter("receiver_backoff_total", "Dropped messages while still backing off")
 RETRY_RESETS      = Counter("retry_reset_total", "Times a key’s back-off window was cleared")
 

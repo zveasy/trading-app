@@ -10,6 +10,18 @@
 
    ./gridlock_scaffold.sh
 
+## Environment Variables
+
+Key settings such as the IB account, host and port are loaded from `.env` if not
+provided on the command line.  The most common variables are:
+
+- `IB_ACCOUNT` – default account ID used for orders
+- `IB_HOST` / `IB_PORT` – address of TWS or IB Gateway
+- `ZMQ_ADDR` – bind address for the receiver (default `tcp://*:5555`)
+- `STATE_DB` – path to the persistent SQLite file
+- `METRICS_PORT` – port for the Prometheus exporter (default `9100`)
+- `JSON_LOGS` – set to `1` to enable JSON formatted logs
+
 # GRIDLOCK Logs
 
 This folder contains structured development logs using the **GRIDLOCK System** — a 14-day rinse-and-repeat cycle designed to help developers ship features with clarity, momentum, and resilience against unknowns.

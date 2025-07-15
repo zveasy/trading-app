@@ -83,9 +83,10 @@ def patched_env(monkeypatch):
         "RECEIVER_BACKOFFS", "RETRY_RESETS",
         "orders_by_symbol", "orders_by_type", "order_latency",
         "orders_filled", "orders_canceled", "orders_rejected", "queue_depth",
+        "IB_ERROR_CODES",
     ]
     fake_metrics = {n: _Metric() for n in metric_names}
-    monkeypatch.setattr("scripts.metrics_server.start", lambda: None)
+    monkeypatch.setattr("scripts.metrics_server.start", lambda *a, **k: None)
     for n, m in fake_metrics.items():
         monkeypatch.setattr(f"scripts.metrics_server.{n}", m)
 

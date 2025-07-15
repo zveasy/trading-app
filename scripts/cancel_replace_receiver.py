@@ -44,7 +44,7 @@ from scripts.retry import RetryRegistry, SHOULD_RETRY
 from scripts.metrics_server import (
     start as start_metrics,
     RECEIVER_MSGS, RECEIVER_ERRORS, IB_RETRIES, INFLIGHT_CONN,
-    RECEIVER_BACKOFFS, RETRY_RESETS,
+    RECEIVER_BACKOFFS, RETRY_RESETS, IB_ERROR_CODES,
     orders_by_symbol, orders_by_type, order_latency, orders_filled,
     orders_canceled, orders_rejected, queue_depth
 )
@@ -52,21 +52,27 @@ from scripts.metrics_server import (
 
 # ═════════════════════════════════  Boot  ════════════════════════════════
 load_dotenv()                            # allow .env overrides
-start_metrics()                          # exporter on http://localhost:9100/metrics
+start_metrics(int(os.getenv("METRICS_PORT", "9100")))  # exporter on http://localhost:9100/metrics
 
 # ── CLI args ──────────────────────────────────────────────────────────────
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser("IB Cancel/Replace Receiver (persistent+metrics)")
-    p.add_argument("--account", default=None, help="IB account (paper/live)")
-    p.add_argument("--host",    default="127.0.0.1", help="TWS / IBGW host")
-    p.add_argument("--port",    type=int, default=7497, help="TWS / IBGW port")
-    p.add_argument("--zmq",     default="tcp://*:5555", help="ZMQ PULL bind addr")
-    p.add_argument("--db",      default="var/state.db", help="SQLite DB file")
+    p.add_argument("--account", default=os.getenv("IB_ACCOUNT"),
+                   help="IB account (paper/live)")
+    p.add_argument("--host",    default=os.getenv("IB_HOST", "127.0.0.1"),
+                   help="TWS / IBGW host")
+    p.add_argument("--port",    type=int,
+                   default=int(os.getenv("IB_PORT", "7497")),
+                   help="TWS / IBGW port")
+    p.add_argument("--zmq",     default=os.getenv("ZMQ_ADDR", "tcp://*:5555"),
+                   help="ZMQ PULL bind addr")
+    p.add_argument("--db",      default=os.getenv("STATE_DB", "var/state.db"),
+                   help="SQLite DB file")
     return p.parse_args()
 
 
 ARGS       = parse_args()
-ACCOUNT_ID = ARGS.account or "DUH148810"
+ACCOUNT_ID = ARGS.account or os.getenv("IB_ACCOUNT", "DUH148810")
 
 # ── Persistent map --------------------------------------------------------
 store = StateStore(ARGS.db)
@@ -178,10 +184,12 @@ while not SHUTDOWN:
                 retry_reg.on_success(key)
                 RETRY_RESETS.inc()
 
-    except Exception as ib_err:                   
+    except Exception as ib_err:
         RECEIVER_ERRORS.inc()
         orders_rejected.inc()
         code = getattr(ib_err, "code", None)
+        if code is not None:
+            IB_ERROR_CODES.labels(code=str(code)).inc()
         if code in SHOULD_RETRY:
             IB_RETRIES.inc()
             retry_reg.on_error(key, code)

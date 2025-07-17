@@ -72,3 +72,17 @@ PYTHONPATH=. python -m tests.cancel_replace_receiver
 cd QuantEngine
 ./test_cancel_replace_zmq              # sends proto ID 10001 twice
 # First send ➜ new order, second send ➜ cancel/replace
+
+## Installing shared-proto package
+After generating the protobuf stubs you can install the package locally:
+
+```bash
+pip install .
+```
+
+Then use the generated message definitions in your code:
+
+```python
+from shared_proto.market_data_pb2 import MarketTick
+```
+

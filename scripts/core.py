@@ -9,6 +9,7 @@ Features
 • Guarantees monotonic order-id allocation via _acquire_order_id().
 • Caches orderStatus / openOrder callbacks so other code can query them.
 • Convenience helpers: send_order(), update_order(), cancel_*().
+• Multi-leg helpers: place_bracket_order(), place_oco_order().
 • No business logic here – higher-level helpers live in scripts/*.
 """
 
@@ -19,12 +20,15 @@ import time
 from typing import Dict, Any, Optional
 
 from ibapi.client import EClient
+from ibapi.contract import Contract
 from ibapi.order import Order
-from ib.client import IBClient            # type stubs (EClient alias)
+from ib.client import IBClient  # type stubs (EClient alias)
 from utils.utils import setup_logger
-from scripts.wrapper import IBWrapper     # your subclass of ibapi.wrapper.EWrapper
+from scripts.wrapper import IBWrapper  # your subclass of ibapi.wrapper.EWrapper
 
 logger = setup_logger()
+
+__all__ = ["TradingApp"]
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -40,7 +44,7 @@ class TradingApp(IBWrapper, IBClient):  # IBClient ≡ EClient
         clientId: int = 1,
         account: Optional[str] = None,
         *,
-        auto_req_ids: bool = False,   # set True if you reconnect per message
+        auto_req_ids: bool = False,  # set True if you reconnect per message
     ):
         self.account = account
         self.auto_req_ids = auto_req_ids
@@ -67,7 +71,7 @@ class TradingApp(IBWrapper, IBClient):  # IBClient ≡ EClient
 
         # Optionally force broker to send a *fresh* id block
         if self.auto_req_ids:
-            self.reqIds(-1)            # will trigger nextValidId again
+            self.reqIds(-1)  # will trigger nextValidId again
 
     # ────────────────────── EWrapper overrides ────────────────────────────
     def nextValidId(self, orderId: int):
@@ -129,10 +133,10 @@ class TradingApp(IBWrapper, IBClient):  # IBClient ≡ EClient
             evt.set()
 
         orig_cb = self.nextValidId
-        self.nextValidId = _tmp_cb       # type: ignore
+        self.nextValidId = _tmp_cb  # type: ignore
         self.reqIds(-1)
         evt.wait(5)
-        self.nextValidId = orig_cb       # restore  # type: ignore
+        self.nextValidId = orig_cb  # restore  # type: ignore
 
         if self._next_order_id is None:
             raise RuntimeError("nextValidId never arrived")
@@ -150,6 +154,112 @@ class TradingApp(IBWrapper, IBClient):  # IBClient ≡ EClient
     def update_order(self, contract, order, existing_id: int) -> int:
         self.cancelOrder(existing_id)
         return self.send_order(contract, order)
+
+    def place_bracket_order(
+        self,
+        parent_contract: Contract,
+        quantity: int,
+        take_profit_px: float,
+        stop_loss_px: float,
+        tif: str = "DAY",
+    ) -> list[int]:
+        """Place a three-leg bracket order and return the order ids."""
+
+        from ib_insync import Order as _Order
+
+        base_id = self._acquire_order_id()
+        action = "BUY" if quantity > 0 else "SELL"
+        qty = abs(quantity)
+
+        parent = _Order(
+            action=action,
+            orderType="MKT",
+            totalQuantity=qty,
+            tif=tif,
+            transmit=False,
+        )
+        if self.account and not parent.account:
+            parent.account = self.account
+
+        tp = _Order(
+            action="SELL" if action == "BUY" else "BUY",
+            orderType="LMT",
+            totalQuantity=qty,
+            lmtPrice=take_profit_px,
+            tif=tif,
+            parentId=base_id,
+            transmit=False,
+        )
+        if self.account and not tp.account:
+            tp.account = self.account
+
+        sl = _Order(
+            action="SELL" if action == "BUY" else "BUY",
+            orderType="STP",
+            totalQuantity=qty,
+            auxPrice=stop_loss_px,
+            tif=tif,
+            parentId=base_id,
+            transmit=True,
+        )
+        if self.account and not sl.account:
+            sl.account = self.account
+
+        self.placeOrder(base_id, parent_contract, parent)
+        self.placeOrder(base_id + 1, parent_contract, tp)
+        self.placeOrder(base_id + 2, parent_contract, sl)
+
+        self._next_order_id = base_id + 3
+        return [base_id, base_id + 1, base_id + 2]
+
+    def place_oco_order(
+        self,
+        contract: Contract,
+        quantity: int,
+        leg1_px: float,
+        leg2_px: float,
+        tif: str = "DAY",
+    ) -> list[int]:
+        """Place two linked limit orders (one cancels the other)."""
+
+        from ib_insync import Order as _Order
+
+        base_id = self._acquire_order_id()
+        action = "BUY" if quantity > 0 else "SELL"
+        qty = abs(quantity)
+        oca_group = f"OCO-{base_id}"
+
+        first = _Order(
+            action=action,
+            orderType="LMT",
+            totalQuantity=qty,
+            lmtPrice=leg1_px,
+            tif=tif,
+            ocaGroup=oca_group,
+            ocaType=1,
+            transmit=False,
+        )
+        if self.account and not first.account:
+            first.account = self.account
+
+        second = _Order(
+            action=action,
+            orderType="LMT",
+            totalQuantity=qty,
+            lmtPrice=leg2_px,
+            tif=tif,
+            ocaGroup=oca_group,
+            ocaType=1,
+            transmit=True,
+        )
+        if self.account and not second.account:
+            second.account = self.account
+
+        self.placeOrder(base_id, contract, first)
+        self.placeOrder(base_id + 1, contract, second)
+
+        self._next_order_id = base_id + 2
+        return [base_id, base_id + 1]
 
     # Bulk helpers
     def cancel_order_by_id(self, order_id: int):
@@ -179,9 +289,9 @@ if __name__ == "__main__":
     from scripts.contracts import create_contract
     from scripts.orders import create_order
 
-    app = TradingApp()        # defaults to paper 7497
+    app = TradingApp()  # defaults to paper 7497
     contract = create_contract("AAPL")
-    order    = create_order("BUY", "MKT", 1)
+    order = create_order("BUY", "MKT", 1)
 
     logger.info("Placing 1-share test order …")
     app.send_order(contract, order)

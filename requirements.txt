@@ -5,6 +5,7 @@ pyzmq==26.0.3                # ZeroMQ bindings  (ctx / sock)
 python-dotenv==1.0.1         # .env parsing
 protobuf>=6.31,<7            # Generated cr_pb2 bindings
 ibapi==9.81.1.post1          # Interactive Brokers native API
+ib_insync>=0.9.83            # Simplified IB API wrapper
 prometheus_client>=0.22      # Metrics exporter (:9100/metrics)
 PyYAML>=6.0.2,<7.0           # YAML sender file ingestion
 
@@ -19,6 +20,7 @@ pydantic<3                   # (optional) structured validation
 # ──────────────────────────────────────────────────────────────
 pytest>=8.4                  # Unit-test runner
 pytest-cov>=5.0              # Coverage reporting
+pytest-asyncio>=0.23         # asyncio test support
 black==24.4.2                # Code formatter
 isort==5.13.2                # Import sorter
 ruff==0.4.8                  # Linter

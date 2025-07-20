@@ -28,6 +28,7 @@ from ibapi.order import Order
 from ib.client import IBClient  # type stubs (EClient alias)
 from utils.utils import setup_logger
 from scripts.wrapper import IBWrapper  # your subclass of ibapi.wrapper.EWrapper
+from risk.throttle import Throttle, ContractSpec
 
 logger = setup_logger()
 
@@ -48,9 +49,11 @@ class TradingApp(IBWrapper, IBClient):  # IBClient ≡ EClient
         account: Optional[str] = None,
         *,
         auto_req_ids: bool = False,  # set True if you reconnect per message
+        throttle: "Throttle | None" = None,
     ):
         self.account = account
         self.auto_req_ids = auto_req_ids
+        self.throttle = throttle or Throttle()
 
         # Runtime caches populated by callbacks
         self.order_statuses: Dict[int, Dict[str, Any]] = {}
@@ -164,6 +167,12 @@ class TradingApp(IBWrapper, IBClient):  # IBClient ≡ EClient
     def send_order(self, contract, order) -> int:
         if self.account and not order.account:
             order.account = self.account
+
+        price = getattr(order, "lmtPrice", 0.0) or getattr(order, "auxPrice", 0.0)
+        self.throttle.block_if_needed(
+            ContractSpec(symbol=contract.symbol), order.totalQuantity, float(price)
+        )
+
         oid = self._acquire_order_id()
         self.placeOrder(oid, contract, order)
         return oid
@@ -198,6 +207,10 @@ class TradingApp(IBWrapper, IBClient):  # IBClient ≡ EClient
         if self.account and not parent.account:
             parent.account = self.account
 
+        self.throttle.block_if_needed(
+            ContractSpec(symbol=parent_contract.symbol), qty, 0.0
+        )
+
         tp = _Order(
             action="SELL" if action == "BUY" else "BUY",
             orderType="LMT",
@@ -210,6 +223,10 @@ class TradingApp(IBWrapper, IBClient):  # IBClient ≡ EClient
         if self.account and not tp.account:
             tp.account = self.account
 
+        self.throttle.block_if_needed(
+            ContractSpec(symbol=parent_contract.symbol), qty, take_profit_px
+        )
+
         sl = _Order(
             action="SELL" if action == "BUY" else "BUY",
             orderType="STP",
@@ -221,6 +238,10 @@ class TradingApp(IBWrapper, IBClient):  # IBClient ≡ EClient
         )
         if self.account and not sl.account:
             sl.account = self.account
+
+        self.throttle.block_if_needed(
+            ContractSpec(symbol=parent_contract.symbol), qty, stop_loss_px
+        )
 
         self.placeOrder(base_id, parent_contract, parent)
         self.placeOrder(base_id + 1, parent_contract, tp)
@@ -259,6 +280,10 @@ class TradingApp(IBWrapper, IBClient):  # IBClient ≡ EClient
         if self.account and not first.account:
             first.account = self.account
 
+        self.throttle.block_if_needed(
+            ContractSpec(symbol=contract.symbol), qty, leg1_px
+        )
+
         second = _Order(
             action=action,
             orderType="LMT",
@@ -271,6 +296,10 @@ class TradingApp(IBWrapper, IBClient):  # IBClient ≡ EClient
         )
         if self.account and not second.account:
             second.account = self.account
+
+        self.throttle.block_if_needed(
+            ContractSpec(symbol=contract.symbol), qty, leg2_px
+        )
 
         self.placeOrder(base_id, contract, first)
         self.placeOrder(base_id + 1, contract, second)

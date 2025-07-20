@@ -19,6 +19,9 @@ import threading
 import time
 from typing import Dict, Any, Optional
 
+import os
+import subprocess
+import sys
 from ibapi.client import EClient
 from ibapi.contract import Contract
 from ibapi.order import Order
@@ -72,6 +75,20 @@ class TradingApp(IBWrapper, IBClient):  # IBClient ≡ EClient
         # Optionally force broker to send a *fresh* id block
         if self.auto_req_ids:
             self.reqIds(-1)  # will trigger nextValidId again
+
+        if os.getenv("RELAY_ENABLED") == "1":
+            addr = os.getenv("RELAY_ZMQ_ADDR", os.getenv("ZMQ_ADDR", "tcp://*:6002"))
+            subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "scripts.order_status_relay",
+                    "--zmq-addr",
+                    addr,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
 
     # ────────────────────── EWrapper overrides ────────────────────────────
     def nextValidId(self, orderId: int):

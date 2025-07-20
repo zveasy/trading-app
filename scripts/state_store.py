@@ -97,8 +97,17 @@ class StateStore:
     def _write_df(
         self, conn: duckdb.DuckDBPyConnection, df: pd.DataFrame, table: str
     ) -> None:
+        """Append ``df`` to ``table`` using DuckDB COPY or ``to_duckdb``."""
         if df.empty:
             return
+
+        # Newer pandas versions provide ``DataFrame.to_duckdb``.  Fallback to
+        # registering a temporary relation and inserting from it when running
+        # on older versions.
+        if hasattr(df, "to_duckdb"):
+            df.to_duckdb(table, connection=conn, if_exists="append")
+            return
+
         conn.register("tmp_df", df)
         if self._table_exists(conn, table):
             conn.execute(f"INSERT INTO {table} SELECT * FROM tmp_df")

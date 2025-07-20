@@ -8,6 +8,8 @@ ibapi==9.81.1.post1          # Interactive Brokers native API
 ib_insync>=0.9.83            # Simplified IB API wrapper
 prometheus_client>=0.22      # Metrics exporter (:9100/metrics)
 PyYAML>=6.0.2,<7.0           # YAML sender file ingestion
+fastapi>=0.111.0             # Web API framework
+uvicorn>=0.29.0              # ASGI server for FastAPI
 
 # ──────────────────────────────────────────────────────────────
 # Helper / utilities

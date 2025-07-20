@@ -18,6 +18,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 # (optional, since you already did COPY . above)
 # COPY . .
 
-EXPOSE 5555 9100
+EXPOSE 5555 9100 8000
 
 ENTRYPOINT ["python", "-m", "scripts.cancel_replace_receiver", "--zmq", "tcp://*:5555"]

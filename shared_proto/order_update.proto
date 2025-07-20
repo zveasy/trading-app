@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package shared_proto;
+
+message OrderUpdate {
+    int64  ts_unix_ns = 1;
+    string symbol     = 2;
+    string side       = 3; // BUY/SELL
+    double fill_px    = 4;
+    int32  fill_qty   = 5;
+    string status     = 6; // Filled, Cancelled, etc.
+    int32  order_id   = 7;
+}

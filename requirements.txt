@@ -25,6 +25,7 @@ black==24.4.2                # Code formatter
 isort==5.13.2                # Import sorter
 ruff==0.4.8                  # Linter
 mypy==1.10.0                 # Static type checker
+freezegun>=1.5
 
 # ──────────────────────────────────────────────────────────────
 # Core runtime dependencies (continued)

@@ -195,7 +195,10 @@ class StateStore:
 
     # ─────────────────────────────────────── internals ────────────────
     def _conn(self) -> duckdb.DuckDBPyConnection:
-        return duckdb.connect(self.path)
+        # ``duckdb.connect`` expects a string path; ``Path`` objects
+        # previously triggered ``TypeError`` during tests.  Convert to ``str``
+        # to support ``pathlib.Path`` inputs.
+        return duckdb.connect(str(self.path))
 
     def _ensure_schema(self) -> None:
         with self._conn() as conn:

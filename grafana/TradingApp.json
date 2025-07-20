@@ -1,0 +1,89 @@
+{
+  "__schemaVersion": 38,
+  "uid": "trading-app",
+  "title": "Trading App",
+  "version": 1,
+  "refresh": "10s",
+  "tags": ["trading"],
+  "timezone": "browser",
+  "time": { "from": "now-15m", "to": "now" },
+  "timepicker": { "refresh_intervals": ["5s","10s","30s","1m","5m"] },
+
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Ticks / sec",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "drawStyle": "lines", "lineWidth": 2 } },
+      "targets": [
+        {
+          "expr": "rate(ticks_total[1m])",
+          "legendFormat": "ticks/s",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Order Updates",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "drawStyle": "bars", "lineWidth": 1, "stacking": { "mode": "normal" } } },
+      "targets": [
+        {
+          "expr": "order_updates_total",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "type": "table",
+      "title": "Notional Exposure",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum by(symbol)(positions_notional)",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "type": "timeseries",
+      "title": "PnL",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "fieldConfig": { "defaults": { "drawStyle": "lines", "lineWidth": 2 } },
+      "targets": [
+        {
+          "expr": "pnl_total",
+          "legendFormat": "pnl",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "-- Grafana --", "uid": "-- grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0,211,255,1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+
+  "templating": { "list": [] },
+
+  "__requires": [
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "2.x" },
+    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "8.x" },
+    { "type": "panel", "id": "table", "name": "Table", "version": "8.x" }
+  ]
+}

@@ -86,3 +86,19 @@ Then use the generated message definitions in your code:
 from shared_proto.market_data_pb2 import MarketTick
 ```
 
+
+## Running in Development
+
+1. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Copy `.env.example` to `.env` and edit values as needed.
+3. Start the kill switch daemon:
+   ```bash
+   python kill_switch.py
+   ```
+4. Launch the API server:
+   ```bash
+   uvicorn api.health:app --reload --port 8000
+   ```

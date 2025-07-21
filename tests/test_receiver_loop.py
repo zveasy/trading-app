@@ -11,10 +11,11 @@ It then asserts that:
 • no un-handled exceptions escape the loop
 """
 
-from types import SimpleNamespace
 import importlib
 import sys
 import time
+from types import SimpleNamespace
+
 import pytest
 
 
@@ -22,6 +23,7 @@ import pytest
 def _build_proto_row(proto: int, qty: int, px: float) -> bytes:
     """Return a serialised CancelReplaceRequest protobuf frame."""
     from tests import cr_pb2
+
     msg = cr_pb2.CancelReplaceRequest()
     msg.order_id = proto
     msg.params.new_qty = qty
@@ -64,25 +66,48 @@ def patched_env(monkeypatch):
 
     # 5️⃣  Controlled RetryRegistry (huge delay so back-off branch is exercised)
     from scripts.retry import RetryRegistry
+
     rreg = RetryRegistry(max_attempts=1, base_delay=1e6)
     monkeypatch.setattr("scripts.retry.RetryRegistry", lambda *a, **k: rreg)
 
     # 6️⃣  Stub Prometheus metric objects
     class _Metric:
-        def inc(self, *_): pass
-        def dec(self, *_): pass
-        def set(self, *_): pass
-        def labels(self, **_): return self
+        def inc(self, *_):
+            pass
+
+        def dec(self, *_):
+            pass
+
+        def set(self, *_):
+            pass
+
+        def labels(self, **_):
+            return self
+
         # histogram.time() context manager
-        def time(self): return self
-        __enter__ = lambda self, *a, **k: None
-        __exit__  = lambda self, *a, **k: False
+        def time(self):
+            return self
+
+        def __enter__(self, *args, **kwargs):
+            return None
+
+        def __exit__(self, *args, **kwargs):
+            return False
 
     metric_names = [
-        "RECEIVER_MSGS", "RECEIVER_ERRORS", "IB_RETRIES", "INFLIGHT_CONN",
-        "RECEIVER_BACKOFFS", "RETRY_RESETS",
-        "orders_by_symbol", "orders_by_type", "order_latency",
-        "orders_filled", "orders_canceled", "orders_rejected", "queue_depth",
+        "RECEIVER_MSGS",
+        "RECEIVER_ERRORS",
+        "IB_RETRIES",
+        "INFLIGHT_CONN",
+        "RECEIVER_BACKOFFS",
+        "RETRY_RESETS",
+        "orders_by_symbol",
+        "orders_by_type",
+        "order_latency",
+        "orders_filled",
+        "orders_canceled",
+        "orders_rejected",
+        "queue_depth",
         "IB_ERROR_CODES",
     ]
     fake_metrics = {n: _Metric() for n in metric_names}
@@ -95,25 +120,27 @@ def patched_env(monkeypatch):
 
     #   • Override zmq.Again with a dummy class so constructing it does NOT
     #     look up zmq.EAGAIN (which triggers the long import-chain in PyZMQ).
-    class _ZmqAgain(Exception): pass
+    class _ZmqAgain(Exception):
+        pass
+
     monkeypatch.setattr(zmq, "Again", _ZmqAgain)
 
     # inside patched_env fixture ───────────────────────────────────────────
     pending = [
-        _build_proto_row(10001, 10, 123.45),   # NEW
-        _build_proto_row(10001, 15, 124.00),   # REPLACE
+        _build_proto_row(10001, 10, 123.45),  # NEW
+        _build_proto_row(10001, 15, 124.00),  # REPLACE
     ]
 
     def _dummy_recv(flags=0):
         # Nothing left to consume → tell the receiver to exit gracefully
         if not pending:
             import sys
-            mod = sys.modules.get("scripts.cancel_replace_receiver")
-            if mod is not None:                         # module already imported
-                mod.SHUTDOWN = True                     # <-- key line
-            raise zmq.Again()                           # so outer loop hits 'continue'
-        return pending.pop(0)
 
+            mod = sys.modules.get("scripts.cancel_replace_receiver")
+            if mod is not None:  # module already imported
+                mod.SHUTDOWN = True  # <-- key line
+            raise zmq.Again()  # so outer loop hits 'continue'
+        return pending.pop(0)
 
     dummy_sock = SimpleNamespace(
         bind=lambda *a, **k: None,

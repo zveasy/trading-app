@@ -1,0 +1,26 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environment
+env/
+.venv/
+venv/
+
+# Python default DB
+*.sqlite
+*.db
+
+# DuckDB
+*.duckdb
+
+# Environment files
+.env
+
+# Log files
+*.log
+
+# Misc
+.idea/
+.vscode/

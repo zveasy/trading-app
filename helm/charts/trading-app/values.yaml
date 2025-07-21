@@ -1,0 +1,23 @@
+replicaCount: 1
+
+image:
+  repository: trading-app
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8000
+  metricsPort: 9100
+
+env:
+  IB_HOST: "127.0.0.1"
+  IB_PORT: "7497"
+  SYMBOLS: "AAPL,MSFT,GOOG"
+  KILL_SWITCH: "false"
+
+hpa:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 5
+  targetValue: "5"

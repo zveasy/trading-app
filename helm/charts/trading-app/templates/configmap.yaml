@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "trading-app.fullname" . }}-env
+  labels:
+    {{- include "trading-app.labels" . | nindent 4 }}
+data:
+  IB_HOST: {{ .Values.env.IB_HOST | quote }}
+  IB_PORT: {{ .Values.env.IB_PORT | quote }}
+  SYMBOLS: {{ .Values.env.SYMBOLS | quote }}
+  KILL_SWITCH: {{ .Values.env.KILL_SWITCH | quote }}

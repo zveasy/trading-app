@@ -39,6 +39,8 @@ throttle_blocked_total = Counter("throttle_blocked_total", "Orders blocked by th
 
 # ── Gauges ───────────────────────────────────────────────────────────────────
 INFLIGHT_CONN = Gauge("inflight_ib_connections", "Open IB Gateway/TWS connections")
+# 1 = connected, 0 = disconnected
+ib_connection_status = Gauge("ib_connection_status", "IB connection status")
 
 
 # ── Start helper ─────────────────────────────────────────────────────────────

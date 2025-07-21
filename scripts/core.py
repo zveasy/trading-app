@@ -15,20 +15,24 @@ Features
 
 from __future__ import annotations
 
-import threading
-import time
-from typing import Dict, Any, Optional
-
 import os
+import random
 import subprocess
 import sys
+import threading
+import time
+from typing import Any, Dict, Optional
+
 from ibapi.client import EClient
 from ibapi.contract import Contract
 from ibapi.order import Order
+
 from ib.client import IBClient  # type stubs (EClient alias)
+from risk.throttle import ContractSpec, Throttle
+from scripts.metrics_server import ib_connection_status
+from scripts.wrapper import \
+    IBWrapper  # your subclass of ibapi.wrapper.EWrapper
 from utils.utils import setup_logger
-from scripts.wrapper import IBWrapper  # your subclass of ibapi.wrapper.EWrapper
-from risk.throttle import Throttle, ContractSpec
 
 logger = setup_logger()
 
@@ -66,10 +70,16 @@ class TradingApp(IBWrapper, IBClient):  # IBClient ≡ EClient
         # Internal state
         self._next_order_id: Optional[int] = None
         self._connected_evt = threading.Event()
+        self._order_buffer: list[tuple[int, Contract, Order]] = []
+        self._paused = False
+        self._manual_disconnect = False
 
-        # Start connection + reader thread
-        self.connect(host, port, clientId)
-        threading.Thread(target=self.run, daemon=True).start()
+        self._host = host
+        self._port = port
+        self._cid = clientId
+
+        # Start connection + reader thread via helper
+        self._connect_ib()
 
         # Wait (≤10 s) for nextValidId
         if not self._connected_evt.wait(timeout=10):
@@ -134,7 +144,41 @@ class TradingApp(IBWrapper, IBClient):  # IBClient ≡ EClient
             return
         logger.error("❌ Error (%s): %s", errorCode, errorString)
 
+    def connectionClosed(self):
+        ib_connection_status.set(0)
+        self._connected_evt.clear()
+        if self._manual_disconnect:
+            self._manual_disconnect = False
+            return
+        logger.warning("🔌 Connection closed – attempting reconnect")
+        self._paused = True
+        self._connect_ib()
+
+    def disconnect(self):
+        self._manual_disconnect = True
+        super().disconnect()
+
     # ────────────────────── internal helpers ───────────────────────────────
+    def _connect_ib(self) -> None:
+        """Connect to IB with exponential back-off."""
+        delay = 1.0
+        while True:
+            try:
+                super().connect(self._host, self._port, self._cid)
+                threading.Thread(target=self.run, daemon=True).start()
+            except Exception as exc:  # pragma: no cover - network errors
+                logger.error("❌ Connect failed: %s", exc)
+            if self._connected_evt.wait(timeout=5):
+                ib_connection_status.set(1)
+                self._paused = False
+                for args in list(self._order_buffer):
+                    super().placeOrder(*args)
+                self._order_buffer.clear()
+                return
+            ib_connection_status.set(0)
+            time.sleep(delay + random.uniform(0, delay))
+            delay = min(delay * 2, 32)
+
     def _acquire_order_id(self) -> int:
         """
         Return a fresh order-id.  If we already hold a valid id, increment it;
@@ -153,10 +197,11 @@ class TradingApp(IBWrapper, IBClient):  # IBClient ≡ EClient
             evt.set()
 
         orig_cb = self.nextValidId
-        self.nextValidId = _tmp_cb  # type: ignore
+        self.nextValidId = _tmp_cb  # type: ignore[method-assign]
         self.reqIds(-1)
         evt.wait(5)
-        self.nextValidId = orig_cb  # restore  # type: ignore
+        self.nextValidId = orig_cb  # type: ignore[method-assign]
+        # restore
 
         if self._next_order_id is None:
             raise RuntimeError("nextValidId never arrived")
@@ -174,8 +219,18 @@ class TradingApp(IBWrapper, IBClient):  # IBClient ≡ EClient
         )
 
         oid = self._acquire_order_id()
-        self.placeOrder(oid, contract, order)
+        if self._paused or not self.isConnected():
+            self._order_buffer.append((oid, contract, order))
+        else:
+            self.placeOrder(oid, contract, order)
         return oid
+
+    # Override to buffer orders if disconnected
+    def placeOrder(self, orderId: int, contract: Contract, order: Order) -> None:  # type: ignore
+        if self._paused or not self.isConnected():
+            self._order_buffer.append((orderId, contract, order))
+            return
+        super().placeOrder(orderId, contract, order)
 
     def update_order(self, contract, order, existing_id: int) -> int:
         self.cancelOrder(existing_id)
@@ -329,13 +384,22 @@ class TradingApp(IBWrapper, IBClient):  # IBClient ≡ EClient
 
     def close_all_positions(self) -> None:
         """Liquidate all open positions using market orders."""
-        from ib_insync import Stock, Order as _Order
+        from ib_insync import Order as _Order
+        from ib_insync import Stock
 
         positions = self.request_positions()
         pos_iter = positions.values() if isinstance(positions, dict) else positions
         for pos in pos_iter:
-            qty = pos.get("position") if isinstance(pos, dict) else getattr(pos, "position", 0)
-            sym = pos.get("symbol") if isinstance(pos, dict) else getattr(pos, "symbol", "")
+            qty = (
+                pos.get("position")
+                if isinstance(pos, dict)
+                else getattr(pos, "position", 0)
+            )
+            sym = (
+                pos.get("symbol")
+                if isinstance(pos, dict)
+                else getattr(pos, "symbol", "")
+            )
             if not qty or not sym:
                 continue
 

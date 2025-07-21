@@ -327,6 +327,32 @@ class TradingApp(IBWrapper, IBClient):  # IBClient ≡ EClient
         time.sleep(2)
         return self.portfolio
 
+    def close_all_positions(self) -> None:
+        """Liquidate all open positions using market orders."""
+        from ib_insync import Stock, Order as _Order
+
+        positions = self.request_positions()
+        pos_iter = positions.values() if isinstance(positions, dict) else positions
+        for pos in pos_iter:
+            qty = pos.get("position") if isinstance(pos, dict) else getattr(pos, "position", 0)
+            sym = pos.get("symbol") if isinstance(pos, dict) else getattr(pos, "symbol", "")
+            if not qty or not sym:
+                continue
+
+            action = "SELL" if qty > 0 else "BUY"
+            contract = Stock(sym, "SMART", "USD")
+            order = _Order(
+                action=action,
+                orderType="MKT",
+                totalQuantity=abs(int(qty)),
+                tif="DAY",
+            )
+            if self.account and not getattr(order, "account", None):
+                order.account = self.account
+            self.placeOrder(self._acquire_order_id(), contract, order)
+
+        self.cancel_all_orders()
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # Demo mode (run: python -m scripts.core)

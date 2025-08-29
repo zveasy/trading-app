@@ -29,6 +29,7 @@ isort==5.13.2                # Import sorter
 ruff==0.4.8                  # Linter
 mypy==1.10.0                 # Static type checker
 freezegun>=1.5
+grpcio-tools>=1.62.0         # Protobuf codegen for *_pb2.py
 
 # ──────────────────────────────────────────────────────────────
 # Core runtime dependencies (continued)

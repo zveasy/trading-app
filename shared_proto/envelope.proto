@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package shared_proto;
+
+import "proto/cr.proto"; // CancelReplaceRequest lives here for now
+
+// Generic v1 envelope to standardize all control-plane messages.
+// Use this to carry SimpleOrder (spot orders) and CancelReplaceRequest.
+// Extend msg_type and oneof payload as needed.
+message Envelope {
+  string version = 1;         // e.g. "v1"
+  string correlation_id = 2;  // sender-generated for acks/retries
+  string msg_type = 3;        // "SimpleOrder" | "CancelReplaceRequest" | ...
+
+  oneof payload {
+    SimpleOrder simple_order = 10;
+    loom.quantengine.CancelReplaceRequest cr = 11; // from proto/cr.proto
+  }
+}
+
+// Basic spot order schema to replace ad-hoc JSON.
+message SimpleOrder {
+  string symbol      = 1; // e.g. AAPL
+  string action      = 2; // BUY | SELL
+  int32  qty         = 3; // > 0
+  string order_type  = 4; // MKT | LMT (others TBD)
+  double limit_price = 5; // used when LMT
+  string account     = 6; // optional override
+}

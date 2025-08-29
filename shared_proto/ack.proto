@@ -1,0 +1,10 @@
+syntax = "proto3";
+package shared_proto;
+
+message Ack {
+  string version = 1;          // e.g. "v1"
+  string correlation_id = 2;   // correlates with Envelope.correlation_id
+  string status = 3;           // "ACCEPTED" | "REJECT"
+  string reason = 4;           // optional reason on REJECT
+  int64 order_id = 5;          // optional when accepted/known
+}
